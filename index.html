@@ -220,7 +220,7 @@ const HPOG = `HOMEAGLOW PRODUCT & OFFER GUIDE (HPOG) — Authoritative Terms:
 - Membership fee and cleaning upcharge are separate charges.
 - Agent must NOT: say no commitment exists, invent discounts, offer below $49/mo or below 3-month commitment, misrepresent ETF.`;
 
-let ST={view:"welcome",agent:"",email:"",team:"",tl:"",dateHired:"",call:null,history:[],score:null,busy:false,speaking:false,listening:false,autoVoice:true,startedAt:0,callIncomplete:false,_dashSaved:false};
+let ST={view:"welcome",agent:"",email:"",team:"",tl:"",dateHired:"",apiError:null,evalStatus:null,call:null,history:[],score:null,busy:false,speaking:false,listening:false,autoVoice:true,startedAt:0,callIncomplete:false,_dashSaved:false};
 
 function rng(seed){let s=seed>>>0||1;return()=>{s^=s<<13;s^=s>>>17;s^=s<<5;return(s>>>0)/4294967296;};}
 function pick(r,a){return a[Math.floor(r()*a.length)];}
@@ -290,48 +290,28 @@ async function callAPI(body){
    CUSTOMER SYSTEM PROMPT (CPL-based YES customer)
    ============================================================ */
 function buildCustomerPrompt(p){
-  const entryBehavior={
-    "OPEN PROSPECT":"After they introduce Homeaglow, react with mild curiosity — you\'re open and willing to hear more.",
-    "LIGHT RESISTANCE":"After they intro, say you only have a minute. But stay on the line — you\'re actually open to listening.",
-  };
+  const resist = p.entry.type==="LIGHT RESISTANCE"
+    ? "You mention you only have a minute but stay on the line — you are actually open to listening."
+    : "You are mildly curious and open to hearing more.";
   return `You are ${p.name}, ${p.age} years old, ${p.occupation}, living in ${p.area}.
-You just answered an unexpected call from Homeaglow, a professional home cleaning company.
+You just answered a call from Homeaglow, a home cleaning company. You did NOT call them — they called you.
 
-YOUR IDENTITY (stay consistent throughout the entire call):
-- Lifestyle: ${p.lifestyle}
-- Communication style: ${p.commStyle}
-- Primary priority: ${p.priority}
-- Decision-making: ${p.decision}
-- Home: ${p.homeType}, ${p.beds} bedroom(s), ${p.baths} bathroom(s)${p.hasPets?", has pets":""}
-- Household: ${p.household}
-- Cleaning habits: ${p.cleaningHabit}
-- Service experience: ${p.serviceExp}
+ABOUT YOU: ${p.lifestyle}. ${p.household}. Home: ${p.beds} bed, ${p.baths} bath${p.hasPets?", you have a pet":""}.
+ATTITUDE: ${resist}
+YOU ARE A "YES CUSTOMER": You are cooperative and genuinely open. You have a real cleaning need. You answer discovery questions honestly. You may ask 1-2 natural questions (about price, commitment, how it works). You get more interested as the agent explains value. You say yes and agree to move forward if the agent asks properly.
 
-CALL ENTRY: ${p.entry.type} — ${entryBehavior[p.entry.type]||"React naturally."}
+REPLY RULES (CRITICAL):
+- Maximum 2 sentences per reply. This is a phone call — be brief.
+- Sound like a real person: "yeah", "oh okay", "hmm", "I mean", "sure".
+- ALWAYS respond directly to what the agent just said.
+- NEVER say "Mm-hmm, go on" or generic fillers repeatedly.
+- NEVER reveal you are an AI or break character.
+- English only.
 
-YOU ARE A YES CUSTOMER:
-- You are cooperative, warm, and genuinely open to hearing about the service.
-- You have a real cleaning need based on your lifestyle and household.
-- You answer discovery questions honestly and naturally.
-- You may ask 1-2 natural clarifying questions (price, how it works, commitment) but you do NOT raise hard objections.
-- You get more excited as the agent explains value relevant to YOUR situation.
-- You commit and agree to move forward if the agent does a decent job asking.
-- Your communication style is ${p.commStyle} — stay true to this throughout.
-
-IMPORTANT RULES:
-- Keep replies SHORT: 1-3 sentences max. This is a phone call.
-- Sound like a real person: use contractions, natural pauses ("hmm", "oh", "yeah", "I mean...").
-- React specifically to what the agent ACTUALLY said — not a script.
-- NEVER coach, evaluate, or break character.
-- NEVER reveal you are an AI.
-- Speak ONLY as ${p.name}. English only.
-
-FIRST RESPONSE: Say only "${p.entry.line}" and nothing else.`;
+YOUR VERY FIRST MESSAGE (say this exact line, nothing more): "${p.entry.line}"`;
 }
 
-/* ============================================================
-   EVALUATOR SYSTEM PROMPT (YCER-001)
-   ============================================================ */
+
 function buildEvaluatorPrompt(p){
   return `You are a QA evaluator for Homeaglow ForeverClean sales calls. Score ONLY the AGENT.
 
@@ -388,17 +368,25 @@ async function llmEvaluate(p,history){
   const transcript=history.map(m=>`${m.speaker==="customer"?p.name:"AGENT"}: ${m.text}`).join("\n");
   const system=buildEvaluatorPrompt(p);
   const out=await callAPI({
-    model:"gpt-4o",
+    model:"claude-sonnet-4-6",
     temperature:0.1,
     max_tokens:1500,
-    response_format:{type:"json_object"},
     messages:[
       {role:"system",content:system},
-      {role:"user",content:"TRANSCRIPT:\n"+transcript}
+      {role:"user",content:"TRANSCRIPT:\n"+transcript+"\n\nReturn valid JSON only, no markdown."}
     ]
   });
   if(!out)return null;
-  try{return JSON.parse(out.replace(/^```json|^```|```$/gm,"").trim());}catch(e){return null;}
+  try{
+    const clean=out.replace(/^```json\s*/,"").replace(/^```\s*/,"").replace(/```\s*$/,"").trim();
+    return JSON.parse(clean);
+  }catch(e){
+    // Try to extract JSON object from response
+    const match=out.match(/\{[\s\S]*\}/);
+    if(match){try{return JSON.parse(match[0]);}catch(e2){}}
+    console.error("Eval JSON parse failed:",out.slice(0,200));
+    return null;
+  }
 }
 
 /* ============================================================
@@ -528,6 +516,32 @@ function stopListening(){_clearTimers();try{if(_rec){_rec.stop();}}catch(e){}ST.
 function stopAll(){if(_pendingRestart){clearTimeout(_pendingRestart);_pendingRestart=null;}stopListening();stopAudio();}
 
 /* ============================================================
+   API TEST HELPER
+   ============================================================ */
+async function testAPI(){
+  const el=document.getElementById("apiTestResult");
+  if(el)el.textContent="Testing...";
+  try{
+    const r=await fetch("/api/chat",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"gpt-4o-mini",max_tokens:10,messages:[{role:"user",content:"Say hi"}]})
+    });
+    const text=await r.text();
+    console.log("API test response:",text);
+    if(r.ok){
+      const d=JSON.parse(text);
+      const reply=d.choices?.[0]?.message?.content||"(no content)";
+      if(el)el.textContent="✅ API OK: "+reply;
+    } else {
+      if(el)el.textContent="❌ API error "+r.status+": "+text.slice(0,100);
+    }
+  }catch(e){
+    if(el)el.textContent="❌ Network error: "+e.message;
+  }
+}
+
+/* ============================================================
    CLOCK
    ============================================================ */
 let _clock=null;
@@ -548,12 +562,13 @@ async function submitAgent(text){
   ST.history.push({speaker:"agent",text});ST.busy=true;render();
   let line=await llmReply(ST.call.profile,ST.history);
   ST.busy=false;if(!line){
-    // Real API failure — log and restart mic so agent can try again
-    console.error("Customer reply failed — check OPENAI_API_KEY in Vercel env vars");
+    ST.apiError="Customer AI failed. Check OPENAI_API_KEY in Vercel env vars.";
     ST.busy=false;
-    if(ST.call&&!ST.call.ended&&ST.autoVoice) startListening();
+    render();
+    console.error("llmReply failed - check OPENAI_API_KEY env var in Vercel dashboard");
     return;
   }
+  ST.apiError=null;
   ST.history.push({speaker:"customer",text:line});render();
   speak(line,()=>{if(ST.call&&!ST.call.ended&&ST.autoVoice&&!ST.busy)startListening();});
 }
@@ -562,52 +577,62 @@ async function startCall(){
   const p=buildProfile();
   ST.call={profile:p,ended:false};ST.history=[];ST.score=null;
   ST.startedAt=Date.now();ST.busy=false;ST.callIncomplete=false;ST._dashSaved=false;
+  ST.apiError=null;
   ST.view="call";render();
   ST.autoVoice=speechSupported();if(ST.autoVoice)await warmUpMic();
   pushCustomer(p.entry.line);
 }
 
 async function endCall(){
-  ST.autoVoice=false;if(ST.call)ST.call.ended=true;
+  ST.autoVoice=false;
+  if(ST.call)ST.call.ended=true;
   stopAll();stopClock();
   if(ST.view==="debrief")return;
   const agentTurns=ST.history.filter(m=>m.speaker==="agent").length;
   ST.callIncomplete=agentTurns<2;
-  ST.view="debrief";render();
+  ST.view="debrief";
+  ST.evalStatus="loading"; // "loading" | "done" | "failed"
+  render();
   if(!ST.callIncomplete){
-    // Save to dashboard immediately with pending status
-    _saveToDash({overall_score:"—",result:"COMPLETED",cte:"—",scores:{},primary_gap:"Evaluation pending",transcript_summary:ST.history.map(m=>(m.speaker==="customer"?ST.call.profile.name:"Agent")+": "+m.text).join(" | ")});
-    // Then attempt evaluation in background — update if it succeeds
-    llmEvaluate(ST.call.profile,ST.history).then(res=>{
-      if(res){ST.score=res;_saveToDash(res,true);render();}
-    });
+    // Try eval up to 2 times
+    let res=null;
+    for(let attempt=0;attempt<2;attempt++){
+      try{ res=await llmEvaluate(ST.call.profile,ST.history); }catch(e){}
+      if(res)break;
+    }
+    if(res){
+      ST.score=res;
+      ST.evalStatus="done";
+      _saveToDash(res,false);
+    } else {
+      ST.evalStatus="failed";
+      _saveToDash({overall_score:"—",result:"COMPLETED",cte:"—",scores:{},
+        primary_gap:"Evaluation could not complete",
+        transcript_summary:ST.history.map(m=>(m.speaker==="customer"?ST.call.profile.name:"Agent")+": "+m.text).join(" | ")
+      },false);
+    }
+    render();
   }
 }
 
-function _saveToDash(sc,isUpdate){
-  if(!ST.call)return;
+function _saveToDash(sc,_unused){
+  if(!ST.call||ST._dashSaved)return;
+  ST._dashSaved=true;
   const p=ST.call.profile;
   const sc2=(sc&&sc.scores)||{};
-  const entry={
+  dashAdd({
     timestamp:new Date().toLocaleString(),
     agent_name:ST.agent,agent_email:ST.email,team:ST.team,tl_name:ST.tl,date_hired:ST.dateHired,
     scenario:p.lifestyle+" — "+p.household,call_entry:p.entry.type,
-    overall_score:sc.overall_score||"—",result:sc.result||"COMPLETED",
-    cte:sc.cte_present?"YES":sc.cte_present===false?"NO":"—",
+    overall_score:sc.overall_score||"—",
+    result:sc.result||"COMPLETED",
+    cte:sc.cte_present===true?"YES":sc.cte_present===false?"NO":"—",
     rapport:sc2.rapport||"—",discovery:sc2.discovery||"—",recommendation:sc2.recommendation||"—",
     pitch_quality:sc2.pitch_quality||"—",terms_accuracy:sc2.terms_accuracy||"—",
     features_benefits:sc2.features_benefits||"—",clarification:sc2.clarification||"—",closing:sc2.closing||"—",
-    primary_gap:sc.primary_gap||"",transcript_summary:sc.transcript_summary||ST.history.map(m=>(m.speaker==="customer"?p.name:"Agent")+": "+m.text).join(" | "),
-  };
-  if(isUpdate){
-    // Replace the most recent entry for this agent
-    const rows=dashLoad();
-    const idx=rows.findIndex(r=>r.agent_name===ST.agent&&r.timestamp===ST._lastDashTimestamp);
-    if(idx>=0){rows[idx]=entry;dashSave(rows);}else{dashAdd(entry);}
-  } else {
-    ST._lastDashTimestamp=entry.timestamp;
-    if(!ST._dashSaved){ST._dashSaved=true;dashAdd(entry);}
-  }
+    primary_gap:sc.primary_gap||"",
+    transcript_summary:sc.transcript_summary||ST.history.map(m=>(m.speaker==="customer"?p.name:"Agent")+": "+m.text).join(" | "),
+  });
 }
 
 /* ============================================================
@@ -697,6 +722,7 @@ function renderCall(app){
       <svg viewBox="0 0 24 24"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg>
     </button>
     <div class="endcall-label">Tap to end &amp; score</div>
+    <div id="apiTestResult" style="font-size:11px;color:var(--muted);text-align:center;margin-top:4px;cursor:pointer" onclick="testAPI()">Tap to test API connection</div>
     <div class="caption-bar">
       <span id="caption" style="font-size:13px">${ST.listening?"&#127908; "+("Listening…"):ST.busy?"Processing…":"Speak after the customer finishes"}</span>
     </div>
@@ -730,19 +756,36 @@ function renderDebrief(app){
     document.getElementById("again").onclick=startCall;return;
   }
 
-  if(!sc){
+  // Loading state
+  if(ST.evalStatus==="loading"||(!sc&&ST.evalStatus!=="failed")){
+    app.innerHTML=`
+    <div class="topbar"><img src="${LOGO_DATA_URI}" class="brandlogo" alt="Convex"/><span class="pill">YES Customer Simulator</span><span class="grow"></span></div>
+    <div class="kicker">Call ended</div>
+    <h1>Scoring your call&#8230; &#128161;</h1>
+    <div class="card" style="margin-top:16px;text-align:center;padding:48px 30px">
+      <div class="spin-ring" style="width:32px;height:32px;border-width:3px;margin:0 auto 18px;display:block"></div>
+      <p style="font-size:15px;font-weight:700;color:var(--purple);margin-bottom:8px">Evaluating your performance</p>
+      <p style="color:var(--muted);font-size:13px;line-height:1.7">Using YCER-001 rubric&#8230; this takes about 20 seconds.<br>Please keep this page open.</p>
+    </div>`;
+    return;
+  }
+
+  // Failed eval state
+  if(ST.evalStatus==="failed"||(!sc)){
     app.innerHTML=`
     <div class="topbar"><img src="${LOGO_DATA_URI}" class="brandlogo" alt="Convex"/><span class="pill">YES Customer Simulator</span><span class="grow"></span></div>
     <div class="kicker">Call ended &#10003;</div>
     <h1>Great job, ${esc(ST.agent||"Agent")}! &#127775;</h1>
-    <div class="card" style="margin-top:16px;text-align:center;padding:40px 30px">
-      <div style="font-size:48px;margin-bottom:16px">&#128222;</div>
-      <p style="font-size:16px;font-weight:700;color:var(--purple);margin-bottom:10px">Thanks for completing the practice call!</p>
-      <p style="color:var(--muted);font-size:14px;line-height:1.7">Your call has been logged to the dashboard.<br>Your manager can review your session there.</p>
+    <div class="card" style="margin-top:16px;text-align:center;padding:36px 30px">
+      <div style="font-size:44px;margin-bottom:14px">&#128222;</div>
+      <p style="font-size:15px;font-weight:700;color:var(--purple);margin-bottom:8px">Practice call completed!</p>
+      <p style="color:var(--muted);font-size:13px;line-height:1.7">Your session has been saved to the dashboard.<br>The AI evaluator wasn&#8217;t able to score this attempt &#8212; your manager can review the transcript.</p>
     </div>
     <div class="card" style="background:rgba(133,201,184,.08);border-color:rgba(133,201,184,.3)">
-      <div class="section-title" style="margin-top:0;color:var(--mint)">&#128172; Call Summary</div>
-      <p style="font-size:13px;color:var(--muted);line-height:1.7">${ST.history.map(m=>`<b>${m.speaker==="customer"?esc(firstName(ST.call.profile.name)):"You"}:</b> ${esc(m.text)}`).join("<br>")}</p>
+      <div class="section-title" style="margin-top:0;color:var(--mint)">&#128172; Call Transcript</div>
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.8;max-height:200px;overflow-y:auto">
+        ${ST.history.map(m=>`<div><b style="color:${m.speaker==="customer"?"var(--purple)":"var(--mint)"}">${m.speaker==="customer"?esc(firstName(ST.call.profile.name)):"You"}:</b> ${esc(m.text)}</div>`).join("")}
+      </div>
     </div>
     <div class="row" style="margin-top:20px;gap:10px">
       <button class="btn ghost" id="backHome2">&#8592; Change details</button>
