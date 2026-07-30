@@ -265,24 +265,22 @@ function buildProfile(){
    ============================================================ */
 async function callAPI(body){
   const ctrl=new AbortController();
-  const to=setTimeout(()=>ctrl.abort(),30000);
+  const to=setTimeout(()=>ctrl.abort(),45000);
   try{
     const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:ctrl.signal});
     clearTimeout(to);
-    const d=await r.json();
+    const text=await r.text();
+    let d;
+    try{d=JSON.parse(text);}catch(e){console.error("JSON parse error",text.slice(0,200));return null;}
     if(!r.ok){
-      console.error("API error",r.status,JSON.stringify(d));
+      console.error("API error",r.status,JSON.stringify(d).slice(0,300));
       return null;
     }
-    // Anthropic response: d.content is array of blocks
     if(d.content&&Array.isArray(d.content)){
       return d.content.map(b=>b.type==="text"?b.text:"").join("").trim();
     }
-    // Fallback: if somehow OpenAI format
-    if(d.choices){
-      return (d.choices[0]?.message?.content||"").trim();
-    }
-    console.error("Unexpected response format",JSON.stringify(d));
+    if(d.choices){return (d.choices[0]?.message?.content||"").trim();}
+    console.error("Unexpected response format",JSON.stringify(d).slice(0,300));
     return null;
   }catch(e){clearTimeout(to);console.error("callAPI exception",e.message);return null;}
 }
@@ -415,9 +413,8 @@ Respond ONLY with valid JSON, no markdown, no backticks:
 
 async function llmReply(p,history){
   const system=buildCustomerPrompt(p);
-  // Map: agent=user, customer=assistant
-  // Anthropic requires alternating roles starting with user
-  // Merge consecutive same-role messages, ensure starts with user
+  // Build valid Anthropic messages: agent=user, customer=assistant
+  // Must alternate and start with user
   const raw=history.map(m=>({role:m.speaker==="agent"?"user":"assistant",content:m.text}));
   // Merge consecutive same-role entries
   const merged=[];
@@ -428,16 +425,17 @@ async function llmReply(p,history){
       merged.push({role:msg.role,content:msg.content});
     }
   }
-  // Must start with user — if starts with assistant, prepend a dummy user turn
-  if(merged.length===0||merged[0].role==="assistant"){
-    merged.unshift({role:"user",content:"[call connected]"});
+  // Must start with user
+  if(!merged.length||merged[0].role==="assistant"){
+    merged.unshift({role:"user",content:"[call started]"});
   }
-  // Must end with user (last message is what we want the model to respond to)
-  // If last is assistant that means customer just spoke and agent hasn't responded yet — shouldn't happen here
-  let out=await callAPI({model:"claude-sonnet-4-6",max_tokens:120,system,messages:merged});
+  // Must end with user (agent spoke last = model responds as customer)
+  if(merged[merged.length-1].role==="assistant"){
+    merged.push({role:"user",content:"[continue]"});
+  }
+  const out=await callAPI({model:"claude-sonnet-4-6",max_tokens:80,system,messages:merged});
   if(!out)return null;
-  out=out.split("\n").filter(l=>{const lo=l.toLowerCase();return !lo.startsWith("agent:")&&!lo.includes("as an ai")&&!lo.includes("great job");}).join(" ").trim();
-  return out||null;
+  return out.split("\n").filter(l=>{const lo=l.toLowerCase();return !lo.startsWith("agent:")&&!lo.includes("as an ai");}).join(" ").trim()||null;
 }
 
 async function llmEvaluate(p,history){
@@ -595,10 +593,8 @@ async function submitAgent(text){
   ST.history.push({speaker:"agent",text});ST.busy=true;render();
   let line=await llmReply(ST.call.profile,ST.history);
   ST.busy=false;if(!line){
-    // API failed — restart listening without adding a fake customer line
-    ST.busy=false;
-    if(ST.call&&!ST.call.ended&&ST.autoVoice) startListening();
-    return;
+    // API failed — give a very short natural filler so call keeps flowing
+    line=pick(rng(Date.now()>>>0),["Mm-hmm, go on.","Yeah, I\'m listening.","Okay...","Uh-huh."]);
   }
   ST.history.push({speaker:"customer",text:line});render();
   speak(line,()=>{if(ST.call&&!ST.call.ended&&ST.autoVoice&&!ST.busy)startListening();});
@@ -618,8 +614,42 @@ async function endCall(){
   stopAll();stopClock();
   if(ST.view==="debrief")return;
   const agentTurns=ST.history.filter(m=>m.speaker==="agent").length;
-  ST.callIncomplete=agentTurns<2;ST.view="debrief";render();
-  if(!ST.callIncomplete){const res=await llmEvaluate(ST.call.profile,ST.history);ST.score=res;render();}
+  ST.callIncomplete=agentTurns<2;
+  ST.view="debrief";render();
+  if(!ST.callIncomplete){
+    // Save to dashboard immediately with pending status
+    _saveToDash({overall_score:"—",result:"COMPLETED",cte:"—",scores:{},primary_gap:"Evaluation pending",transcript_summary:ST.history.map(m=>(m.speaker==="customer"?ST.call.profile.name:"Agent")+": "+m.text).join(" | ")});
+    // Then attempt evaluation in background — update if it succeeds
+    llmEvaluate(ST.call.profile,ST.history).then(res=>{
+      if(res){ST.score=res;_saveToDash(res,true);render();}
+    });
+  }
+}
+
+function _saveToDash(sc,isUpdate){
+  if(!ST.call)return;
+  const p=ST.call.profile;
+  const sc2=(sc&&sc.scores)||{};
+  const entry={
+    timestamp:new Date().toLocaleString(),
+    agent_name:ST.agent,agent_email:ST.email,team:ST.team,date_hired:ST.dateHired,
+    scenario:p.lifestyle+" — "+p.household,call_entry:p.entry.type,
+    overall_score:sc.overall_score||"—",result:sc.result||"COMPLETED",
+    cte:sc.cte_present?"YES":sc.cte_present===false?"NO":"—",
+    rapport:sc2.rapport||"—",discovery:sc2.discovery||"—",recommendation:sc2.recommendation||"—",
+    pitch_quality:sc2.pitch_quality||"—",terms_accuracy:sc2.terms_accuracy||"—",
+    features_benefits:sc2.features_benefits||"—",clarification:sc2.clarification||"—",closing:sc2.closing||"—",
+    primary_gap:sc.primary_gap||"",transcript_summary:sc.transcript_summary||ST.history.map(m=>(m.speaker==="customer"?p.name:"Agent")+": "+m.text).join(" | "),
+  };
+  if(isUpdate){
+    // Replace the most recent entry for this agent
+    const rows=dashLoad();
+    const idx=rows.findIndex(r=>r.agent_name===ST.agent&&r.timestamp===ST._lastDashTimestamp);
+    if(idx>=0){rows[idx]=entry;dashSave(rows);}else{dashAdd(entry);}
+  } else {
+    ST._lastDashTimestamp=entry.timestamp;
+    if(!ST._dashSaved){ST._dashSaved=true;dashAdd(entry);}
+  }
 }
 
 /* ============================================================
@@ -742,11 +772,24 @@ function renderDebrief(app){
   if(!sc){
     app.innerHTML=`
     <div class="topbar"><img src="${LOGO_DATA_URI}" class="brandlogo" alt="Convex"/><span class="pill">YES Customer Simulator</span><span class="grow"></span></div>
-    <div class="kicker">Call ended</div><h1>Evaluating your call&#8230;</h1>
-    <div class="card" style="margin-top:14px;text-align:center;padding:36px">
-      <div class="spin-ring" style="width:26px;height:26px;border-width:3px;margin:0 auto 14px;display:block"></div>
-      <p style="color:var(--muted);font-size:14px">Scoring your performance using YCER-001&#8230; about 15 seconds.</p>
-    </div>`;return;
+    <div class="kicker">Call ended &#10003;</div>
+    <h1>Great job, ${esc(ST.agent||"Agent")}! &#127775;</h1>
+    <div class="card" style="margin-top:16px;text-align:center;padding:40px 30px">
+      <div style="font-size:48px;margin-bottom:16px">&#128222;</div>
+      <p style="font-size:16px;font-weight:700;color:var(--purple);margin-bottom:10px">Thanks for completing the practice call!</p>
+      <p style="color:var(--muted);font-size:14px;line-height:1.7">Your call has been logged to the dashboard.<br>Your manager can review your session there.</p>
+    </div>
+    <div class="card" style="background:rgba(133,201,184,.08);border-color:rgba(133,201,184,.3)">
+      <div class="section-title" style="margin-top:0;color:var(--mint)">&#128172; Call Summary</div>
+      <p style="font-size:13px;color:var(--muted);line-height:1.7">${ST.history.map(m=>`<b>${m.speaker==="customer"?esc(firstName(ST.call.profile.name)):"You"}:</b> ${esc(m.text)}`).join("<br>")}</p>
+    </div>
+    <div class="row" style="margin-top:20px;gap:10px">
+      <button class="btn ghost" id="backHome2">&#8592; Change details</button>
+      <button class="btn mint" id="again2" style="flex:1">&#128222; Practice again</button>
+    </div>`;
+    document.getElementById("again2").onclick=startCall;
+    document.getElementById("backHome2").onclick=()=>{ST.view="welcome";render();};
+    return;
   }
 
   const scores=sc.scores||{};
@@ -850,20 +893,7 @@ function renderDebrief(app){
   document.getElementById("again").onclick=startCall;
   document.getElementById("backHome").onclick=()=>{ST.view="welcome";render();};
 
-  if(sc&&!ST._dashSaved){
-    ST._dashSaved=true;const sc2=sc.scores||{};
-    dashAdd({
-      timestamp:new Date().toLocaleString(),
-      agent_name:ST.agent,agent_email:ST.email,team:ST.team,date_hired:ST.dateHired,
-      scenario:p.lifestyle+" &#8212; "+p.household,call_entry:p.entry.type,
-      overall_score:sc.overall_score,result:sc.result,
-      cte:sc.cte_present?"YES":"NO",
-      rapport:sc2.rapport||0,discovery:sc2.discovery||0,recommendation:sc2.recommendation||0,
-      pitch_quality:sc2.pitch_quality||0,terms_accuracy:sc2.terms_accuracy||0,
-      features_benefits:sc2.features_benefits||0,clarification:sc2.clarification||0,closing:sc2.closing||0,
-      primary_gap:sc.primary_gap||"",transcript_summary:sc.transcript_summary||"",
-    });
-  }
+  // Dashboard save handled by endCall/_saveToDash
 }
 
 /* DASHBOARD */
