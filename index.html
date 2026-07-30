@@ -220,7 +220,7 @@ const HPOG = `HOMEAGLOW PRODUCT & OFFER GUIDE (HPOG) — Authoritative Terms:
 - Membership fee and cleaning upcharge are separate charges.
 - Agent must NOT: say no commitment exists, invent discounts, offer below $49/mo or below 3-month commitment, misrepresent ETF.`;
 
-let ST={view:"welcome",agent:"",email:"",team:"",dateHired:"",call:null,history:[],score:null,busy:false,speaking:false,listening:false,autoVoice:true,startedAt:0,callIncomplete:false,_dashSaved:false};
+let ST={view:"welcome",agent:"",email:"",team:"",tl:"",dateHired:"",call:null,history:[],score:null,busy:false,speaking:false,listening:false,autoVoice:true,startedAt:0,callIncomplete:false,_dashSaved:false};
 
 function rng(seed){let s=seed>>>0||1;return()=>{s^=s<<13;s^=s>>>17;s^=s<<5;return(s>>>0)/4294967296;};}
 function pick(r,a){return a[Math.floor(r()*a.length)];}
@@ -271,18 +271,19 @@ async function callAPI(body){
     clearTimeout(to);
     const text=await r.text();
     let d;
-    try{d=JSON.parse(text);}catch(e){console.error("JSON parse error",text.slice(0,200));return null;}
-    if(!r.ok){
-      console.error("API error",r.status,JSON.stringify(d).slice(0,300));
-      return null;
+    try{d=JSON.parse(text);}catch(e){console.error("JSON parse error",text.slice(0,300));return null;}
+    if(!r.ok){console.error("API error",r.status,JSON.stringify(d).slice(0,300));return null;}
+    // OpenAI format
+    if(d.choices&&d.choices[0]?.message?.content){
+      return d.choices[0].message.content.trim();
     }
+    // Anthropic format
     if(d.content&&Array.isArray(d.content)){
       return d.content.map(b=>b.type==="text"?b.text:"").join("").trim();
     }
-    if(d.choices){return (d.choices[0]?.message?.content||"").trim();}
-    console.error("Unexpected response format",JSON.stringify(d).slice(0,300));
+    console.error("Unknown response format",JSON.stringify(d).slice(0,300));
     return null;
-  }catch(e){clearTimeout(to);console.error("callAPI exception",e.message);return null;}
+  }catch(e){clearTimeout(to);console.error("callAPI exception:",e.message);return null;}
 }
 
 /* ============================================================
@@ -332,116 +333,70 @@ FIRST RESPONSE: Say only "${p.entry.line}" and nothing else.`;
    EVALUATOR SYSTEM PROMPT (YCER-001)
    ============================================================ */
 function buildEvaluatorPrompt(p){
-  return `You are a strict, evidence-based QA evaluator for Homeaglow outbound ForeverClean (FCF) sales calls.
-You evaluate using the VoiceLab YES Customer Evaluation Rubric (YCER-001) and VoiceLab Sales Evaluation Standard (VSES).
+  return `You are a QA evaluator for Homeaglow ForeverClean sales calls. Score ONLY the AGENT.
 
-${HPOG}
+HPOG FACTS:
+- ForeverClean: $19 first month, then $59/mo from Month 2. Standard: 6 paid months. Min: 3 paid months.
+- Free 3h voucher. Upcharge: 4h=+$19, 6h=+$59. ETF=$35 x initial hours.
+- Correct hours for ${p.beds}bd/${p.baths}ba: ${p.recHours}h. Upcharge: $${p.upcharge}.
+- Negotiation: $59→$54→$49/mo only on cost objection. Commitment: 6→3 months min.
+- CTE triggers if agent materially misrepresents pricing, commitment, ETF, or voucher AND does not self-correct.
 
-CUSTOMER PROFILE:
-- Name: ${p.name} | Age: ${p.age} | Occupation: ${p.occupation} | Area: ${p.area}
-- Home: ${p.homeType}, ${p.beds}bd/${p.baths}ba${p.hasPets?", pets":""}
-- Lifestyle: ${p.lifestyle} | Priority: ${p.priority}
-- Correct recommended hours per HPOG: ${p.recHours}h
-- Upcharge if applicable: $${p.upcharge}
+RUBRIC (PASS=80+):
+1. rapport /5 — professional, conversational, listens
+2. discovery /10 — meaningful questions, follow-up, uses info later
+3. recommendation /10 — bridges discovery to ForeverClean naturally
+4. pitch_quality /20 — clear structure, membership explained, value proposition
+5. terms_accuracy /25 — accurate pricing, commitment, voucher, ETF (HIGHEST WEIGHT)
+6. features_benefits /10 — connects features to THIS customer's specific needs
+7. clarification /5 — handles customer questions accurately
+8. closing /15 — asks for commitment, explores hesitation
 
-YCER-001 RUBRIC — 100 points total, PASS = 80+:
-1. rapport           — Rapport & Conversation Control        /5
-2. discovery         — Discovery & Need Identification       /10
-3. recommendation    — Recommendation & Transition           /10
-4. pitch_quality     — ForeverClean Pitch Quality            /20
-5. terms_accuracy    — ForeverClean Terms Accuracy           /25
-6. features_benefits — Customer-Specific Value / FAB         /10
-7. clarification     — Customer Questions & Clarification    /5
-8. closing           — Closing & Commitment                  /15
+CTE RULE: If agent materially misstates a term AND does not correct it → cap score at 79 (FAIL).
 
-CRITICAL TERMS ERROR (CTE) RULE:
-If agent materially misrepresents: pricing, commitment, ETF, charges, voucher — that subcategory = 0.
-If CTE is UNCORRECTED at end of call — overall score is CAPPED at 79 (FAIL regardless of raw score).
+Customer: ${p.name}, ${p.lifestyle}, ${p.household}, ${p.beds}bd/${p.baths}ba, ${p.area}
+Entry: ${p.entry.type}
 
-EVALUATION PRINCIPLES (VSES):
-- Score only OBSERVABLE behaviors in the transcript. Never invent or assume.
-- Score execution, NOT outcome. Customer saying YES does not mean agent passed.
-- Apply partial credit. Apply Principle of Reasonable Opportunity.
-- No double-penalization for the same behavior across competencies.
-- Evidence standard: every deduction must be traceable to transcript evidence.
-
-Respond ONLY with valid JSON, no markdown, no backticks:
-{
-  "overall_score": number,
-  "result": "PASS" or "FAIL",
-  "cte_present": boolean,
-  "cte_details": { "incorrect_term": "", "agent_statement": "", "correct_standard": "", "self_corrected": boolean },
-  "scores": {
-    "rapport": number,
-    "discovery": number,
-    "recommendation": number,
-    "pitch_quality": number,
-    "terms_accuracy": number,
-    "features_benefits": number,
-    "clarification": number,
-    "closing": number
-  },
-  "score_notes": {
-    "rapport": { "evidence": "", "strengths": [], "opportunities": [] },
-    "discovery": { "evidence": "", "strengths": [], "opportunities": [] },
-    "recommendation": { "evidence": "", "strengths": [], "opportunities": [] },
-    "pitch_quality": { "evidence": "", "strengths": [], "opportunities": [] },
-    "terms_accuracy": { "evidence": "", "strengths": [], "opportunities": [] },
-    "features_benefits": { "evidence": "", "strengths": [], "opportunities": [] },
-    "clarification": { "evidence": "", "strengths": [], "opportunities": [] },
-    "closing": { "evidence": "", "strengths": [], "opportunities": [] }
-  },
-  "hidden_profile_reveal": {
-    "lifestyle": "",
-    "primary_priority": "",
-    "decision_style": "",
-    "cleaning_habit": "",
-    "service_experience": "",
-    "correct_hours": number,
-    "upcharge": number,
-    "buying_likelihood": ""
-  },
-  "strengths": [],
-  "areas_for_improvement": [],
-  "pitch_feedback": "",
-  "terms_feedback": "",
-  "primary_gap": "",
-  "recommended_practice": "",
-  "transcript_summary": ""
-}`;
+Return ONLY valid JSON, no markdown:
+{"overall_score":0,"result":"PASS or FAIL","cte_present":false,"cte_details":{"incorrect_term":"","agent_statement":"","correct_standard":"","self_corrected":false},"scores":{"rapport":0,"discovery":0,"recommendation":0,"pitch_quality":0,"terms_accuracy":0,"features_benefits":0,"clarification":0,"closing":0},"score_notes":{"rapport":{"strengths":[],"opportunities":[]},"discovery":{"strengths":[],"opportunities":[]},"recommendation":{"strengths":[],"opportunities":[]},"pitch_quality":{"strengths":[],"opportunities":[]},"terms_accuracy":{"strengths":[],"opportunities":[]},"features_benefits":{"strengths":[],"opportunities":[]},"clarification":{"strengths":[],"opportunities":[]},"closing":{"strengths":[],"opportunities":[]}},"hidden_profile_reveal":{"lifestyle":"","primary_priority":"","decision_style":"","cleaning_habit":"","service_experience":"","correct_hours":${p.recHours},"upcharge":${p.upcharge},"buying_likelihood":""},"strengths":[],"areas_for_improvement":[],"pitch_feedback":"","terms_feedback":"","primary_gap":"","recommended_practice":"","transcript_summary":""}`;
 }
+
 
 async function llmReply(p,history){
   const system=buildCustomerPrompt(p);
-  // Build valid Anthropic messages: agent=user, customer=assistant
-  // Must alternate and start with user
-  const raw=history.map(m=>({role:m.speaker==="agent"?"user":"assistant",content:m.text}));
-  // Merge consecutive same-role entries
-  const merged=[];
-  for(const msg of raw){
-    if(merged.length&&merged[merged.length-1].role===msg.role){
-      merged[merged.length-1].content+=" "+msg.content;
-    } else {
-      merged.push({role:msg.role,content:msg.content});
-    }
+  // Use GPT-4o-mini (OpenAI) — fast, reliable, perfect for short customer replies
+  // OpenAI format: system message first, then conversation history
+  const messages=[{role:"system",content:system}];
+  // Map history: agent=user, customer=assistant
+  for(const m of history){
+    messages.push({role:m.speaker==="agent"?"user":"assistant",content:m.text});
   }
-  // Must start with user
-  if(!merged.length||merged[0].role==="assistant"){
-    merged.unshift({role:"user",content:"[call started]"});
-  }
-  // Must end with user (agent spoke last = model responds as customer)
-  if(merged[merged.length-1].role==="assistant"){
-    merged.push({role:"user",content:"[continue]"});
-  }
-  const out=await callAPI({model:"claude-sonnet-4-6",max_tokens:80,system,messages:merged});
+  const out=await callAPI({
+    model:"gpt-4o-mini",
+    temperature:0.85,
+    max_tokens:80,
+    messages
+  });
   if(!out)return null;
-  return out.split("\n").filter(l=>{const lo=l.toLowerCase();return !lo.startsWith("agent:")&&!lo.includes("as an ai");}).join(" ").trim()||null;
+  return out.split("\n").filter(l=>{
+    const lo=l.toLowerCase();
+    return !lo.startsWith("agent:")&&!lo.startsWith("apple:")&&!lo.includes("as an ai")&&!lo.includes("great job");
+  }).join(" ").trim()||null;
 }
 
 async function llmEvaluate(p,history){
   const transcript=history.map(m=>`${m.speaker==="customer"?p.name:"AGENT"}: ${m.text}`).join("\n");
   const system=buildEvaluatorPrompt(p);
-  const out=await callAPI({model:"claude-sonnet-4-6",max_tokens:2500,system,messages:[{role:"user",content:"TRANSCRIPT:\n"+transcript+"\n\nEvaluate using YCER-001. Return valid JSON only."}]});
+  const out=await callAPI({
+    model:"gpt-4o",
+    temperature:0.1,
+    max_tokens:1500,
+    response_format:{type:"json_object"},
+    messages:[
+      {role:"system",content:system},
+      {role:"user",content:"TRANSCRIPT:\n"+transcript}
+    ]
+  });
   if(!out)return null;
   try{return JSON.parse(out.replace(/^```json|^```|```$/gm,"").trim());}catch(e){return null;}
 }
@@ -593,8 +548,11 @@ async function submitAgent(text){
   ST.history.push({speaker:"agent",text});ST.busy=true;render();
   let line=await llmReply(ST.call.profile,ST.history);
   ST.busy=false;if(!line){
-    // API failed — give a very short natural filler so call keeps flowing
-    line=pick(rng(Date.now()>>>0),["Mm-hmm, go on.","Yeah, I\'m listening.","Okay...","Uh-huh."]);
+    // Real API failure — log and restart mic so agent can try again
+    console.error("Customer reply failed — check OPENAI_API_KEY in Vercel env vars");
+    ST.busy=false;
+    if(ST.call&&!ST.call.ended&&ST.autoVoice) startListening();
+    return;
   }
   ST.history.push({speaker:"customer",text:line});render();
   speak(line,()=>{if(ST.call&&!ST.call.ended&&ST.autoVoice&&!ST.busy)startListening();});
@@ -632,7 +590,7 @@ function _saveToDash(sc,isUpdate){
   const sc2=(sc&&sc.scores)||{};
   const entry={
     timestamp:new Date().toLocaleString(),
-    agent_name:ST.agent,agent_email:ST.email,team:ST.team,date_hired:ST.dateHired,
+    agent_name:ST.agent,agent_email:ST.email,team:ST.team,tl_name:ST.tl,date_hired:ST.dateHired,
     scenario:p.lifestyle+" — "+p.household,call_entry:p.entry.type,
     overall_score:sc.overall_score||"—",result:sc.result||"COMPLETED",
     cte:sc.cte_present?"YES":sc.cte_present===false?"NO":"—",
@@ -683,6 +641,8 @@ function renderWelcome(app){
     <input id="agentEmail" type="email" placeholder="e.g. jordan@homeaglow.com" value="${esc(ST.email)}"/>
     <div class="label">Team</div>
     <input id="agentTeam" placeholder="e.g. Team Alpha" value="${esc(ST.team)}"/>
+    <div class="label">TL Name</div>
+    <input id="agentTL" placeholder="e.g. Jumar Dela Cruz" value="${esc(ST.tl)}"/>
     <div class="label">Date Hired</div>
     <input id="agentDateHired" type="date" value="${esc(ST.dateHired)}" max="${new Date().toISOString().slice(0,10)}"/>
     <button class="btn" id="startBtn" style="margin-top:20px">&#128222; Start Call</button>
@@ -702,7 +662,8 @@ function renderWelcome(app){
     const dateHired=document.getElementById("agentDateHired").value;
     if(!name){alert("Please enter your name.");return;}
     if(!dateHired){alert("Please select your date hired.");return;}
-    ST.agent=name;ST.email=email;ST.team=team;ST.dateHired=dateHired;
+    const tl=document.getElementById("agentTL").value.trim();
+    ST.agent=name;ST.email=email;ST.team=team;ST.tl=tl;ST.dateHired=dateHired;
     startCall();
   };
 }
@@ -899,76 +860,170 @@ function renderDebrief(app){
 /* DASHBOARD */
 function renderDashboard(app){
   const rows=dashLoad();
-  const fA=ST._dashFilter||"",fR=ST._dashFilterResult||"";
+  const fA=ST._dashFilter||"";
+  const fTL=ST._dashFilterTL||"";
+  const fResult=ST._dashFilterResult||"";
   let filtered=rows;
   if(fA.trim())filtered=filtered.filter(r=>(r.agent_name||"").toLowerCase().includes(fA.toLowerCase()));
-  if(fR)filtered=filtered.filter(r=>(r.result||"")===fR);
-  const total=filtered.length,passed=filtered.filter(r=>r.result==="PASS").length,failed=filtered.filter(r=>r.result==="FAIL").length;
-  const sc2=filtered.map(r=>Number(r.overall_score)).filter(n=>!isNaN(n));
-  const avg=sc2.length?Math.round(sc2.reduce((a,b)=>a+b,0)/sc2.length):null;
+  if(fTL.trim())filtered=filtered.filter(r=>(r.tl_name||"").toLowerCase().includes(fTL.toLowerCase()));
+  if(fResult)filtered=filtered.filter(r=>(r.result||"")===fResult);
+
+  const total=filtered.length;
+  const passed=filtered.filter(r=>r.result==="PASS").length;
+  const failed=filtered.filter(r=>r.result==="FAIL").length;
+  const completed=filtered.filter(r=>r.result==="COMPLETED").length;
+  const numericScores=filtered.map(r=>Number(r.overall_score)).filter(n=>!isNaN(n)&&n>0);
+  const avg=numericScores.length?Math.round(numericScores.reduce((a,b)=>a+b,0)/numericScores.length):null;
+  const passRate=passed+failed>0?Math.round(passed/(passed+failed)*100):null;
+
+  // Avg by skill (only scored entries)
+  function avgSkill(key){ const vals=filtered.map(r=>Number(r[key])).filter(n=>!isNaN(n)&&n>0); return vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length*10)/10:null; }
+  const skills=[
+    {key:"rapport",label:"Rapport & Conv. Control",max:5},
+    {key:"discovery",label:"Discovery & Need ID",max:10},
+    {key:"recommendation",label:"Recommendation & Transition",max:10},
+    {key:"pitch_quality",label:"ForeverClean Pitch Quality",max:20},
+    {key:"terms_accuracy",label:"Terms Accuracy",max:25},
+    {key:"features_benefits",label:"Features as Benefits",max:10},
+    {key:"clarification",label:"Customer Clarification",max:5},
+    {key:"closing",label:"Closing & Commitment",max:15},
+  ];
+
+  function skillBar(key,max){ const v=avgSkill(key); if(!v)return ""; const pct=Math.round(v/max*100); return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="min-width:160px;font-size:12px;color:var(--muted)">${skills.find(s=>s.key===key).label}</span><div style="flex:1;background:var(--surface2);border-radius:99px;height:7px"><div style="width:${pct}%;background:linear-gradient(90deg,var(--purple),var(--lavender));height:7px;border-radius:99px"></div></div><span style="font-size:12px;font-weight:700;color:var(--purple);min-width:32px;text-align:right">${v}</span></div>`; }
 
   app.innerHTML=`
   <div class="topbar"><img src="${LOGO_DATA_URI}" class="brandlogo" alt="Convex"/><span class="pill">Dashboard</span><span class="grow"></span>
     <button class="btn ghost" id="dlCsv" style="padding:6px 12px;font-size:12px">&#11015; CSV</button>
     <button class="btn ghost" id="backDash" style="padding:6px 12px;font-size:12px">&#8592; Back</button>
   </div>
-  <div class="kicker">Results &#8226; YES Customer Simulator</div><h1>All Calls</h1>
+  <div class="kicker">Results &#8226; YES Customer Simulator</div>
+  <h1>Simulation Results</h1>
 
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0">
-    <div class="card dash-stat" style="padding:14px"><div class="val">${total}</div><div class="lbl">Total</div></div>
-    <div class="card dash-stat" style="padding:14px"><div class="val" style="color:var(--good)">${passed}</div><div class="lbl">Passed</div></div>
-    <div class="card dash-stat" style="padding:14px"><div class="val" style="color:var(--bad)">${failed}</div><div class="lbl">Failed</div></div>
-    <div class="card dash-stat" style="padding:14px"><div class="val" style="color:var(--purple)">${avg??"-"}</div><div class="lbl">Avg Score</div></div>
+    <div class="card dash-stat" style="padding:16px"><div class="val">${total}</div><div class="lbl">Total Runs</div></div>
+    <div class="card dash-stat" style="padding:16px"><div class="val" style="color:var(--purple)">${passRate!==null?passRate+"%":"—"}</div><div class="lbl">Pass Rate</div></div>
+    <div class="card dash-stat" style="padding:16px"><div class="val" style="color:var(--good)">${avg??"-"}</div><div class="lbl">Avg Score</div></div>
+    <div class="card dash-stat" style="padding:16px"><div class="val" style="color:var(--bad)">${failed}</div><div class="lbl">Fails</div></div>
   </div>
 
-  <div class="card" style="display:flex;gap:10px;padding:14px;flex-wrap:wrap">
-    <input id="fAgent" placeholder="Filter by agent&#8230;" style="flex:1;min-width:140px" value="${esc(fA)}"/>
-    <select id="fResult" style="flex:0 0 140px">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+    <div class="card">
+      <div class="section-title" style="margin-top:0">Pass &amp; Fail</div>
+      <div style="display:flex;align-items:center;gap:16px">
+        <div style="position:relative;width:80px;height:80px">
+          <svg viewBox="0 0 36 36" style="width:80px;height:80px;transform:rotate(-90deg)">
+            <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--line)" stroke-width="3"/>
+            <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--good)" stroke-width="3"
+              stroke-dasharray="${passRate??0} ${100-(passRate??0)}" stroke-linecap="round"/>
+          </svg>
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:15px;font-weight:800;color:var(--purple)">${passRate!==null?passRate+"%":"—"}</div>
+        </div>
+        <div>
+          <div style="font-size:13px;margin-bottom:6px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--good);margin-right:6px"></span>Pass: <b>${passed}</b></div>
+          <div style="font-size:13px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:6px"></span>Fail: <b>${failed}</b></div>
+          ${completed>0?`<div style="font-size:13px;margin-top:6px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--lavender);margin-right:6px"></span>Pending: <b>${completed}</b></div>`:""}
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title" style="margin-top:0">Avg Score by Skill</div>
+      ${skills.map(s=>skillBar(s.key,s.max)).join("")||`<p style="font-size:12px;color:var(--muted)">No scored sessions yet</p>`}
+    </div>
+  </div>
+
+  <div class="card" style="display:flex;gap:10px;padding:14px;flex-wrap:wrap;margin-bottom:14px">
+    <input id="fAgent" placeholder="&#128269; Search name, scenario..." style="flex:2;min-width:140px" value="${esc(fA)}"/>
+    <input id="fTL" placeholder="TL name..." style="flex:1;min-width:100px" value="${esc(fTL)}"/>
+    <select id="fResult" style="flex:0 0 130px">
       <option value="">All results</option>
-      <option value="PASS" ${fR==="PASS"?"selected":""}>PASS</option>
-      <option value="FAIL" ${fR==="FAIL"?"selected":""}>FAIL</option>
+      <option value="PASS" ${fResult==="PASS"?"selected":""}>PASS</option>
+      <option value="FAIL" ${fResult==="FAIL"?"selected":""}>FAIL</option>
+      <option value="COMPLETED" ${fResult==="COMPLETED"?"selected":""}>Pending</option>
     </select>
   </div>
 
-  ${filtered.length===0?`<div class="card" style="text-align:center;padding:36px;color:var(--muted)">No results yet. Complete a call to see data here.</div>`:
-  filtered.map((r,i)=>`
-  <div class="card" id="drow-${i}" style="cursor:pointer;margin-bottom:8px">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <div><span style="font-weight:800;font-size:14px;color:var(--ink)">${esc(r.agent_name)}</span><span style="color:var(--muted);font-size:12px;margin-left:8px">${esc(r.team)}</span>${r.cte==="YES"?`<span style="margin-left:8px;font-size:10px;background:rgba(232,150,160,.2);color:var(--bad);padding:2px 7px;border-radius:99px;font-weight:700">CTE</span>`:""}</div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-family:var(--display);font-size:22px;font-weight:800;color:var(--purple)">${r.overall_score}</span>
-        <span class="pass-badge ${r.result==="PASS"?"pass":"fail"}">${esc(r.result)}</span>
-        <span id="chev-${i}" style="color:var(--muted)">&#9658;</span>
-      </div>
-    </div>
-    <div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(r.timestamp)} &#183; Hired: ${esc(r.date_hired||"—")} &#183; ${esc(r.scenario)}</div>
-    <div id="ddetail-${i}" style="display:none;margin-top:12px;padding-top:12px;border-top:1.5px solid var(--line)">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;font-size:12.5px;margin-bottom:10px">
-        <span>Rapport: <b>${r.rapport}/5</b></span><span>Discovery: <b>${r.discovery}/10</b></span>
-        <span>Recommendation: <b>${r.recommendation}/10</b></span><span>Pitch Quality: <b>${r.pitch_quality}/20</b></span>
-        <span>Terms Accuracy: <b>${r.terms_accuracy}/25</b></span><span>FAB: <b>${r.features_benefits}/10</b></span>
-        <span>Clarification: <b>${r.clarification}/5</b></span><span>Closing: <b>${r.closing}/15</b></span>
-      </div>
-      ${r.primary_gap?`<div class="section-title" style="margin-top:8px">Primary Gap</div><p style="font-size:13px">${esc(r.primary_gap)}</p>`:""}
-      ${r.transcript_summary?`<div class="section-title">Summary</div><p style="font-size:13px;color:var(--muted);line-height:1.6">${esc(r.transcript_summary)}</p>`:""}
-    </div>
-  </div>`).join("")}`;
+  <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Scroll to see all columns &nbsp;&#8594;</div>
+  <div style="overflow-x:auto;border-radius:16px;border:1.5px solid var(--line);background:var(--surface)">
+    <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:900px">
+      <thead>
+        <tr style="background:var(--surface2);border-bottom:1.5px solid var(--line)">
+          <th style="padding:10px 12px;text-align:left;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em">Timestamp</th>
+          <th style="padding:10px 8px;text-align:center;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em">Result</th>
+          <th style="padding:10px 8px;text-align:left;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em">Agent Name</th>
+          <th style="padding:10px 8px;text-align:left;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em">Email</th>
+          <th style="padding:10px 8px;text-align:left;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em">TL Name</th>
+          <th style="padding:10px 8px;text-align:center;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em">Score</th>
+          <th style="padding:10px 8px;text-align:left;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em">Team</th>
+          <th style="padding:10px 8px;text-align:left;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em">Date Hired</th>
+          <th style="padding:10px 8px;text-align:left;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em">Scenario</th>
+          <th style="padding:10px 8px;text-align:center;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em">CTE</th>
+          <th style="padding:10px 8px;text-align:left;color:var(--muted);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em">Primary Gap</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filtered.length===0?`<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--muted)">No results yet. Complete a call to see data here.</td></tr>`:
+        filtered.map((r,i)=>{
+          const resultColor=r.result==="PASS"?"var(--good)":r.result==="FAIL"?"var(--bad)":"var(--lavender)";
+          return `<tr id="drow-${i}" style="border-bottom:1px solid var(--line);cursor:pointer;transition:background .15s" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+            <td style="padding:10px 12px;color:var(--muted);white-space:nowrap">${esc(r.timestamp)}</td>
+            <td style="padding:10px 8px;text-align:center"><span style="padding:3px 10px;border-radius:99px;font-size:10px;font-weight:800;background:${r.result==="PASS"?"rgba(124,201,164,.15)":r.result==="FAIL"?"rgba(232,150,160,.15)":"rgba(196,176,232,.15)"};color:${resultColor};border:1px solid ${resultColor}">${esc(r.result)}</span></td>
+            <td style="padding:10px 8px;font-weight:700;color:var(--ink)">${esc(r.agent_name)}</td>
+            <td style="padding:10px 8px;color:var(--muted)">${esc(r.agent_email||"—")}</td>
+            <td style="padding:10px 8px;color:var(--ink)">${esc(r.tl_name||"—")}</td>
+            <td style="padding:10px 8px;text-align:center;font-family:var(--display);font-weight:800;color:var(--purple)">${r.overall_score||"—"}</td>
+            <td style="padding:10px 8px;color:var(--muted)">${esc(r.team||"—")}</td>
+            <td style="padding:10px 8px;color:var(--muted);white-space:nowrap">${esc(r.date_hired||"—")}</td>
+            <td style="padding:10px 8px;color:var(--muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.scenario||"—")}</td>
+            <td style="padding:10px 8px;text-align:center">${r.cte==="YES"?`<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:800;background:rgba(232,150,160,.15);color:var(--bad);border:1px solid var(--bad)">CTE</span>`:`<span style="color:var(--dim);font-size:12px">${r.cte||"—"}</span>`}</td>
+            <td style="padding:10px 8px;color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.primary_gap||"—")}</td>
+          </tr>
+          <tr id="ddetail-${i}" style="display:none;background:var(--surface2)">
+            <td colspan="11" style="padding:14px 16px">
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;font-size:12px;margin-bottom:10px">
+                <span>Rapport: <b>${r.rapport||"—"}/5</b></span>
+                <span>Discovery: <b>${r.discovery||"—"}/10</b></span>
+                <span>Recommendation: <b>${r.recommendation||"—"}/10</b></span>
+                <span>Pitch Quality: <b>${r.pitch_quality||"—"}/20</b></span>
+                <span>Terms Accuracy: <b>${r.terms_accuracy||"—"}/25</b></span>
+                <span>FAB: <b>${r.features_benefits||"—"}/10</b></span>
+                <span>Clarification: <b>${r.clarification||"—"}/5</b></span>
+                <span>Closing: <b>${r.closing||"—"}/15</b></span>
+              </div>
+              ${r.transcript_summary?`<div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--purple);font-weight:700;margin-bottom:4px">Summary</div><p style="font-size:12.5px;color:var(--muted);line-height:1.6">${esc(r.transcript_summary)}</p>`:""}
+            </td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+  </div>
+  `;
 
   document.getElementById("backDash").onclick=()=>{ST.view="welcome";render();};
   document.getElementById("fAgent").oninput=e=>{ST._dashFilter=e.target.value;render();};
+  document.getElementById("fTL").oninput=e=>{ST._dashFilterTL=e.target.value;render();};
   document.getElementById("fResult").onchange=e=>{ST._dashFilterResult=e.target.value;render();};
+
   filtered.forEach((_,i)=>{
     const row=document.getElementById(`drow-${i}`);
-    if(row)row.onclick=()=>{const d=document.getElementById(`ddetail-${i}`);const c=document.getElementById(`chev-${i}`);if(d){d.style.display=d.style.display==="none"?"block":"none";if(c)c.innerHTML=d.style.display==="none"?"&#9658;":"&#9660;";}};
+    if(row)row.onclick=()=>{
+      const d=document.getElementById(`ddetail-${i}`);
+      if(d){d.style.display=d.style.display==="none"?"table-row":"none";}
+    };
   });
+
   document.getElementById("dlCsv").onclick=()=>{
-    const cols=["Timestamp","Agent Name","Email","Team","Date Hired","Scenario","Call Entry","Overall Score","Result","CTE","Rapport","Discovery","Recommendation","Pitch Quality","Terms Accuracy","FAB","Clarification","Closing","Primary Gap","Summary"];
-    const csvRows=[cols.join(","),...filtered.map(r=>[r.timestamp,r.agent_name,r.agent_email,r.team,r.date_hired,r.scenario,r.call_entry,r.overall_score,r.result,r.cte,r.rapport,r.discovery,r.recommendation,r.pitch_quality,r.terms_accuracy,r.features_benefits,r.clarification,r.closing,r.primary_gap,r.transcript_summary].map(v=>'"'+String(v==null?"":v).replace(/"/g,'\"\"')+ '"').join(","))];
+    const cols=["Timestamp","Result","Agent Name","Email","TL Name","Overall Score","Team","Date Hired","Scenario","CTE","Rapport","Discovery","Recommendation","Pitch Quality","Terms Accuracy","FAB","Clarification","Closing","Primary Gap","Summary"];
+    const csvRows=[cols.join(","),...filtered.map(r=>[
+      r.timestamp,r.result,r.agent_name,r.agent_email,r.tl_name,r.overall_score,r.team,r.date_hired,
+      r.scenario,r.cte,r.rapport,r.discovery,r.recommendation,r.pitch_quality,
+      r.terms_accuracy,r.features_benefits,r.clarification,r.closing,r.primary_gap,r.transcript_summary
+    ].map(v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"').join(","))];
     const blob=new Blob([csvRows.join("\n")],{type:"text/csv"});
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);
     a.download=`ycsim-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(a.href);
   };
 }
+
 
 document.addEventListener("DOMContentLoaded",()=>render());
 </script>
