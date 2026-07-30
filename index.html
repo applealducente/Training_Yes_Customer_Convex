@@ -313,32 +313,82 @@ YOUR VERY FIRST MESSAGE (say this exact line, nothing more): "${p.entry.line}"`;
 
 
 function buildEvaluatorPrompt(p){
-  return `You are a QA evaluator for Homeaglow ForeverClean sales calls. Score ONLY the AGENT.
+  return `You are a strict QA evaluator scoring a Homeaglow ForeverClean (FCF) outbound sales call.
+Score ONLY the AGENT's behaviors. Evaluate execution, not outcome.
 
-HPOG FACTS:
-- ForeverClean: $19 first month, then $59/mo from Month 2. Standard: 6 paid months. Min: 3 paid months.
-- Free 3h voucher. Upcharge: 4h=+$19, 6h=+$59. ETF=$35 x initial hours.
-- Correct hours for ${p.beds}bd/${p.baths}ba: ${p.recHours}h. Upcharge: $${p.upcharge}.
-- Negotiation: $59→$54→$49/mo only on cost objection. Commitment: 6→3 months min.
-- CTE triggers if agent materially misrepresents pricing, commitment, ETF, or voucher AND does not self-correct.
+PRODUCT FACTS (HPOG - authoritative):
+- ForeverClean membership: $19 first month fee, then $59/month from Month 2
+- Standard commitment: 6 paid months minimum (negotiable down to 3 months minimum)
+- Monthly fee negotiation on cost objection only: $59 → $54 → $49 (never below $49)
+- Initial cleaning: FREE 3-hour voucher included
+- Upcharge when home needs more hours: 4h = +$19, 6h = +$59
+- ETF if cancel before completing commitment: $35 × number of initial cleaning hours
+- Correct hours for this customer (${p.beds}bd/${p.baths}ba): ${p.recHours} hours, upcharge: $${p.upcharge}
+- Unused paid hours roll over to next appointment
+- Membership fee and cleaning upcharge are SEPARATE charges
 
-RUBRIC (PASS=80+):
-1. rapport /5 — professional, conversational, listens
-2. discovery /10 — meaningful questions, follow-up, uses info later
-3. recommendation /10 — bridges discovery to ForeverClean naturally
-4. pitch_quality /20 — clear structure, membership explained, value proposition
-5. terms_accuracy /25 — accurate pricing, commitment, voucher, ETF (HIGHEST WEIGHT)
-6. features_benefits /10 — connects features to THIS customer's specific needs
-7. clarification /5 — handles customer questions accurately
-8. closing /15 — asks for commitment, explores hesitation
+YCER-001 RUBRIC - 100 points total, PASS = 80+:
 
-CTE RULE: If agent materially misstates a term AND does not correct it → cap score at 79 (FAIL).
+1. rapport (max 5pts)
+   Full (5): Professional opening, natural conversation, active listening, good control
+   Partial (2-4): Some good behaviors but inconsistent
+   Low (0-1): Unprofessional, poor listening, lost control
 
-Customer: ${p.name}, ${p.lifestyle}, ${p.household}, ${p.beds}bd/${p.baths}ba, ${p.area}
-Entry: ${p.entry.type}
+2. discovery (max 10pts)
+   Full (9-10): Meaningful open questions, follow-up, identifies home size + cleaning need, uses info later
+   Partial (5-8): Some discovery but missing depth or follow-up
+   Low (0-4): Superficial or no discovery
 
-Return ONLY valid JSON, no markdown:
-{"overall_score":0,"result":"PASS or FAIL","cte_present":false,"cte_details":{"incorrect_term":"","agent_statement":"","correct_standard":"","self_corrected":false},"scores":{"rapport":0,"discovery":0,"recommendation":0,"pitch_quality":0,"terms_accuracy":0,"features_benefits":0,"clarification":0,"closing":0},"score_notes":{"rapport":{"strengths":[],"opportunities":[]},"discovery":{"strengths":[],"opportunities":[]},"recommendation":{"strengths":[],"opportunities":[]},"pitch_quality":{"strengths":[],"opportunities":[]},"terms_accuracy":{"strengths":[],"opportunities":[]},"features_benefits":{"strengths":[],"opportunities":[]},"clarification":{"strengths":[],"opportunities":[]},"closing":{"strengths":[],"opportunities":[]}},"hidden_profile_reveal":{"lifestyle":"","primary_priority":"","decision_style":"","cleaning_habit":"","service_experience":"","correct_hours":${p.recHours},"upcharge":${p.upcharge},"buying_likelihood":""},"strengths":[],"areas_for_improvement":[],"pitch_feedback":"","terms_feedback":"","primary_gap":"","recommended_practice":"","transcript_summary":""}`;
+3. recommendation (max 10pts)
+   Full (9-10): Clear bridge from discovered need to ForeverClean, logical transition
+   Partial (5-8): Recommendation made but weak connection to discovery
+   Low (0-4): Abrupt pitch with no connection to customer needs
+
+4. pitch_quality (max 20pts)
+   Full (18-20): Clear ForeverClean explanation, logical sequence, membership + recurring nature explained, engaging
+   Partial (10-17): Basic pitch but unclear, incomplete, or poorly structured
+   Low (0-9): Substantially incomplete, confusing, or misleading
+
+5. terms_accuracy (max 25pts) ← HIGHEST WEIGHT
+   Score each sub-area:
+   a) Voucher/initial offer explained correctly (5pts)
+   b) Initial charges accurate - $19 first month + applicable upcharge stated separately (4pts)
+   c) Recurring $59/mo stated accurately from Month 2 (4pts)
+   d) 6-month commitment stated correctly (4pts)
+   e) Upcharge/additional hours accurate when applicable (3pts)
+   f) ETF formula accurate if discussed: $35 × hours (3pts)
+   g) No fabrication or misrepresentation (2pts)
+   CTE: Material misstatement of any term that stays uncorrected → cap final score at 79
+
+6. features_benefits (max 10pts)
+   Full (9-10): Connects ForeverClean features to THIS customer's specific discovered needs
+   Partial (5-8): Some personalization but mostly generic
+   Low (0-4): Generic feature listing only, no customer connection
+
+7. clarification (max 5pts)
+   Full (5): Directly and accurately answers customer questions, checks understanding
+   Partial (2-4): Somewhat answers but incomplete or slightly off
+   Low (0-1): Avoids, ignores, or answers incorrectly
+
+8. closing (max 15pts)
+   Full (13-15): Confident ask for commitment, explores hesitation, clear next step
+   Partial (7-12): Attempts close but weak, indirect, or doesn't explore hesitation
+   Low (0-6): No meaningful close attempt despite reasonable opportunity
+
+SCORING PRINCIPLES:
+- Score only what is OBSERVABLE in the transcript
+- Award partial credit — never binary score
+- Do not penalize for missed opportunity if no reasonable chance existed
+- overall_score = sum of all 8 category scores
+- result = "PASS" if overall_score >= 80 AND no uncorrected CTE, else "FAIL"
+- If CTE present and uncorrected: result = "FAIL" regardless of score, cap at 79
+
+Customer context: ${p.name}, ${p.age}yo, ${p.lifestyle}, ${p.household}
+Home: ${p.beds}bd/${p.baths}ba, ${p.area}. Correct recommended hours: ${p.recHours}h.
+Call entry type: ${p.entry.type}
+
+OUTPUT: Return ONLY this JSON with no markdown, no explanation:
+{"overall_score":0,"result":"PASS","cte_present":false,"cte_details":{"incorrect_term":"","agent_statement":"","correct_standard":"","self_corrected":false},"scores":{"rapport":0,"discovery":0,"recommendation":0,"pitch_quality":0,"terms_accuracy":0,"features_benefits":0,"clarification":0,"closing":0},"score_notes":{"rapport":{"strengths":[],"opportunities":[]},"discovery":{"strengths":[],"opportunities":[]},"recommendation":{"strengths":[],"opportunities":[]},"pitch_quality":{"strengths":[],"opportunities":[]},"terms_accuracy":{"strengths":[],"opportunities":[]},"features_benefits":{"strengths":[],"opportunities":[]},"clarification":{"strengths":[],"opportunities":[]},"closing":{"strengths":[],"opportunities":[]}},"hidden_profile_reveal":{"lifestyle":"","primary_priority":"","decision_style":"","cleaning_habit":"","service_experience":"","correct_hours":${p.recHours},"upcharge":${p.upcharge},"buying_likelihood":""},"strengths":[],"areas_for_improvement":[],"pitch_feedback":"","terms_feedback":"","primary_gap":"","recommended_practice":"","transcript_summary":""}`;
 }
 
 
@@ -365,15 +415,17 @@ async function llmReply(p,history){
 }
 
 async function llmEvaluate(p,history){
-  const transcript=history.map(m=>`${m.speaker==="customer"?p.name:"AGENT"}: ${m.text}`).join("\n");
+  const lines=history.slice(-40);
+  const transcript=lines.map(m=>`${m.speaker==="customer"?p.name:"AGENT"}: ${m.text}`).join("\n");
   const system=buildEvaluatorPrompt(p);
+  // Claude requires: system at TOP LEVEL, messages array has only user/assistant roles
   const out=await callAPI({
     model:"claude-sonnet-4-6",
+    system:system,
     temperature:0.1,
     max_tokens:1500,
     messages:[
-      {role:"system",content:system},
-      {role:"user",content:"TRANSCRIPT:\n"+transcript+"\n\nReturn valid JSON only, no markdown."}
+      {role:"user",content:"TRANSCRIPT TO EVALUATE:\n\n"+transcript+"\n\nReturn valid JSON only. No markdown, no explanation."}
     ]
   });
   if(!out)return null;
@@ -381,10 +433,9 @@ async function llmEvaluate(p,history){
     const clean=out.replace(/^```json\s*/,"").replace(/^```\s*/,"").replace(/```\s*$/,"").trim();
     return JSON.parse(clean);
   }catch(e){
-    // Try to extract JSON object from response
     const match=out.match(/\{[\s\S]*\}/);
     if(match){try{return JSON.parse(match[0]);}catch(e2){}}
-    console.error("Eval JSON parse failed:",out.slice(0,200));
+    console.error("Eval JSON parse failed:",out.slice(0,300));
     return null;
   }
 }
@@ -416,14 +467,36 @@ async function _playBuffer(buf,onEnded){
 
 function _stopAudio(){try{if(_audio){_audio.pause();_audio.src="";_audio=null;}}catch(e){}ST.speaking=false;}
 
+let _lockedVoice=null; // locked per call session for consistency
+
+function _pickVoice(female){
+  const vs=window.speechSynthesis.getVoices();
+  if(!vs.length)return null;
+  // Try to find a natural US English voice
+  const femaleNames=["Samantha","Zira","Karen","Moira","Fiona","Victoria","Tessa"];
+  const maleNames=["Daniel","Alex","Fred","Tom","Lee"];
+  const preferred=female?femaleNames:maleNames;
+  // First try preferred name match
+  for(const name of preferred){
+    const v=vs.find(v=>v.name.includes(name)&&/en/i.test(v.lang));
+    if(v)return v;
+  }
+  // Fallback: any en-US voice
+  return vs.find(v=>/en[-_]US/i.test(v.lang))||vs.find(v=>/en/i.test(v.lang))||vs[0];
+}
+
 function _speakBrowser(text,onDone){
   if(!("speechSynthesis" in window)){if(onDone)onDone();return;}
   try{
     window.speechSynthesis.cancel();
     const u=new SpeechSynthesisUtterance(text);
-    const vs=window.speechSynthesis.getVoices();
-    const pref=vs.find(v=>/en[-_]US/i.test(v.lang)&&/natural|samantha|google/i.test(v.name))||vs.find(v=>/en/i.test(v.lang));
-    if(pref)u.voice=pref; u.rate=1.02;
+    // Use locked voice for consistency, pick one if not set
+    if(!_lockedVoice&&ST.call){
+      _lockedVoice=_pickVoice(ST.call.profile.female);
+    }
+    if(_lockedVoice)u.voice=_lockedVoice;
+    u.rate=0.95; // slightly slower = more natural
+    u.pitch=ST.call?.profile?.female?1.1:0.9;
     u.onstart=()=>{ST.speaking=true;renderStatus();};
     u.onend=()=>{ST.speaking=false;renderStatus();if(onDone)onDone();};
     u.onerror=()=>{ST.speaking=false;if(onDone)onDone();};
@@ -444,16 +517,18 @@ function _splitSentences(text){
 async function speak(text,onDone){
   if(!text||!text.trim()){if(onDone)onDone();return;}
   if(ST.call&&ST.call.ended){if(onDone)onDone();return;}
+  // Use browser TTS for instant zero-delay response
+  // Consistent voice locked per customer session
+  _speakBrowser(text,onDone);
+}
+
+async function speakOpenAI(text,onDone){
+  // Used only for first customer line (pickup) for quality
+  if(!text||!text.trim()){if(onDone)onDone();return;}
   const voice=ST.call?.profile?.ttsVoice||"nova";
-  // Fetch and play full reply at once — no chunking = no delay, no cutoff
   const buf=await _fetchAudio(text,voice);
-  if(buf){
-    _stopAudio();
-    await _playBuffer(buf,onDone);
-  } else {
-    // Fallback to browser TTS
-    _speakBrowser(text,onDone);
-  }
+  if(buf){_stopAudio();await _playBuffer(buf,onDone);}
+  else{_speakBrowser(text,onDone);}
 }
 
 function stopAudio(){_stopAudio();try{window.speechSynthesis&&window.speechSynthesis.cancel();}catch(e){}ST.speaking=false;}
@@ -550,7 +625,10 @@ function stopClock(){if(_clock){clearInterval(_clock);_clock=null;}}
 function pushCustomer(text){
   if(!text||!ST.call||ST.call.ended)return;
   ST.history.push({speaker:"customer",text});render();
-  speak(text,()=>{if(ST.call&&!ST.call.ended&&ST.autoVoice&&!ST.busy)startListening();});
+  // First customer line uses OpenAI TTS for quality; replies use browser TTS (instant)
+  const isFirst=ST.history.filter(m=>m.speaker==="customer").length===1;
+  const fn=isFirst?speakOpenAI:speak;
+  fn(text,()=>{if(ST.call&&!ST.call.ended&&ST.autoVoice&&!ST.busy)startListening();});
 }
 
 async function submitAgent(text){
@@ -574,6 +652,7 @@ async function startCall(){
   ST.call={profile:p,ended:false};ST.history=[];ST.score=null;
   ST.startedAt=Date.now();ST.busy=false;ST.callIncomplete=false;ST._dashSaved=false;
   ST.apiError=null;
+  _lockedVoice=null; // reset voice lock for new customer
   ST.view="call";render();
   ST.autoVoice=speechSupported();if(ST.autoVoice)await warmUpMic();
   pushCustomer(p.entry.line);
@@ -615,19 +694,32 @@ function _saveToDash(sc,_unused){
   if(!ST.call||ST._dashSaved)return;
   ST._dashSaved=true;
   const p=ST.call.profile;
-  const sc2=(sc&&sc.scores)||{};
+  const scores=(sc&&sc.scores)||{};
+  const hasScores=sc&&sc.overall_score&&sc.overall_score!=="—";
   dashAdd({
     timestamp:new Date().toLocaleString(),
-    agent_name:ST.agent,agent_email:ST.email,team:ST.team,tl_name:ST.tl,date_hired:ST.dateHired,
-    scenario:p.lifestyle+" — "+p.household,call_entry:p.entry.type,
-    overall_score:sc.overall_score||"—",
-    result:sc.result||"COMPLETED",
-    cte:sc.cte_present===true?"YES":sc.cte_present===false?"NO":"—",
-    rapport:sc2.rapport||"—",discovery:sc2.discovery||"—",recommendation:sc2.recommendation||"—",
-    pitch_quality:sc2.pitch_quality||"—",terms_accuracy:sc2.terms_accuracy||"—",
-    features_benefits:sc2.features_benefits||"—",clarification:sc2.clarification||"—",closing:sc2.closing||"—",
-    primary_gap:sc.primary_gap||"",
-    transcript_summary:sc.transcript_summary||ST.history.map(m=>(m.speaker==="customer"?p.name:"Agent")+": "+m.text).join(" | "),
+    agent_name:ST.agent,
+    agent_email:ST.email,
+    team:ST.team,
+    tl_name:ST.tl||"",
+    date_hired:ST.dateHired||"",
+    scenario:(p.lifestyle||"")+" — "+(p.household||""),
+    call_entry:p.entry.type||"",
+    overall_score:hasScores?String(sc.overall_score):"—",
+    result:hasScores?(sc.result||"FAIL"):"COMPLETED",
+    cte:sc&&sc.cte_present===true?"YES":sc&&sc.cte_present===false?"NO":"—",
+    rapport:scores.rapport!=null?String(scores.rapport):"—",
+    discovery:scores.discovery!=null?String(scores.discovery):"—",
+    recommendation:scores.recommendation!=null?String(scores.recommendation):"—",
+    pitch_quality:scores.pitch_quality!=null?String(scores.pitch_quality):"—",
+    terms_accuracy:scores.terms_accuracy!=null?String(scores.terms_accuracy):"—",
+    features_benefits:scores.features_benefits!=null?String(scores.features_benefits):"—",
+    clarification:scores.clarification!=null?String(scores.clarification):"—",
+    closing:scores.closing!=null?String(scores.closing):"—",
+    primary_gap:sc&&sc.primary_gap?sc.primary_gap:"",
+    transcript_summary:sc&&sc.transcript_summary
+      ?sc.transcript_summary
+      :ST.history.slice(-20).map(m=>(m.speaker==="customer"?p.name:"Agent")+": "+m.text).join(" | "),
   });
 }
 
