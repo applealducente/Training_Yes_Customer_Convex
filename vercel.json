@@ -3,11 +3,13 @@
   "builds": [
     { "src": "index.html", "use": "@vercel/static" },
     { "src": "api/chat.js", "use": "@vercel/node" },
-    { "src": "api/speak.js", "use": "@vercel/node" }
+    { "src": "api/speak.js", "use": "@vercel/node" },
+    { "src": "api/evaluate.js", "use": "@vercel/node" }
   ],
   "routes": [
     { "src": "/api/chat", "dest": "/api/chat.js" },
     { "src": "/api/speak", "dest": "/api/speak.js" },
+    { "src": "/api/evaluate", "dest": "/api/evaluate.js" },
     { "src": "/(.*)", "dest": "/index.html" }
   ]
 }

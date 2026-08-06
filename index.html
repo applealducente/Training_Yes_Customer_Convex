@@ -291,151 +291,84 @@ async function callAPI(body){
    ============================================================ */
 function buildCustomerPrompt(p){
   const resist = p.entry.type==="LIGHT RESISTANCE"
-    ? "You mention you only have a minute but stay on the line — you are actually open to listening."
-    : "You are mildly curious and open to hearing more.";
-  return `You are ${p.name}, ${p.age} years old, ${p.occupation}, living in ${p.area}.
-You just answered a call from Homeaglow, a home cleaning company. You did NOT call them — they called you.
+    ? "You say you only have a minute but you stay on — you're genuinely open to hearing them out."
+    : "You're curious and open to hearing what they have to say.";
+  return `You are ${p.name}, ${p.age}, ${p.occupation} in ${p.area}. You just got an unexpected call from Homeaglow, a cleaning company.
 
-ABOUT YOU: ${p.lifestyle}. ${p.household}. Home: ${p.beds} bed, ${p.baths} bath${p.hasPets?", you have a pet":""}.
-ATTITUDE: ${resist}
-YOU ARE A "YES CUSTOMER": You are cooperative and genuinely open. You have a real cleaning need. You answer discovery questions honestly. You may ask 1-2 natural questions (about price, commitment, how it works). You get more interested as the agent explains value. You say yes and agree to move forward if the agent asks properly.
+WHO YOU ARE: ${p.lifestyle}. ${p.household}. You have a ${p.beds}-bedroom, ${p.baths}-bathroom home${p.hasPets?" and a pet":""}.
+YOUR VIBE: ${resist}
 
-REPLY RULES (CRITICAL):
-- Maximum 2 sentences per reply. This is a phone call — be brief.
-- Sound like a real person: "yeah", "oh okay", "hmm", "I mean", "sure".
-- ALWAYS respond directly to what the agent just said.
-- NEVER say "Mm-hmm, go on" or generic fillers repeatedly.
-- NEVER reveal you are an AI or break character.
-- English only.
+YOU ARE A WARM, COOPERATIVE CUSTOMER:
+- You have a genuine cleaning need and you're open to the idea
+- You answer questions naturally and honestly
+- You ask real questions when curious (price, how it works, scheduling, commitment)
+- You get more excited as the agent connects their service to your life
+- You agree to move forward if the agent asks confidently
 
-YOUR VERY FIRST MESSAGE (say this exact line, nothing more): "${p.entry.line}"`;
+HOW TO TALK (this is a phone call — sound real):
+- Keep it SHORT: 1-2 sentences max per turn
+- Use natural speech: "oh wow", "yeah that makes sense", "hmm okay", "sure", "I mean...", "gotcha"
+- React specifically to what they just said — don't give generic responses
+- Show personality — warm, slightly busy, real
+- NEVER repeat the same filler phrase twice in a row
+- NEVER say you're an AI
+- English only
+
+FIRST LINE — say exactly this and nothing else: "${p.entry.line}"`;
 }
 
 
 function buildEvaluatorPrompt(p){
-  return `You are a strict QA evaluator scoring a Homeaglow ForeverClean (FCF) outbound sales call.
-Score ONLY the AGENT's behaviors. Evaluate execution, not outcome.
+  return `Score this Homeaglow ForeverClean sales call. AGENT only. Return JSON only.
 
-PRODUCT FACTS (HPOG - authoritative):
-- ForeverClean membership: $19 first month fee, then $59/month from Month 2
-- Standard commitment: 6 paid months minimum (negotiable down to 3 months minimum)
-- Monthly fee negotiation on cost objection only: $59 → $54 → $49 (never below $49)
-- Initial cleaning: FREE 3-hour voucher included
-- Upcharge when home needs more hours: 4h = +$19, 6h = +$59
-- ETF if cancel before completing commitment: $35 × number of initial cleaning hours
-- Correct hours for this customer (${p.beds}bd/${p.baths}ba): ${p.recHours} hours, upcharge: $${p.upcharge}
-- Unused paid hours roll over to next appointment
-- Membership fee and cleaning upcharge are SEPARATE charges
+PRODUCT (HPOG):
+First month: $19 membership fee. Month 2+: $59/mo. Commitment: 6 months (min 3). Free 3h voucher.
+Upcharge: 4h=+$19, 6h=+$59. ETF=$35xhours if cancel early. Never below $49/mo or 3-month min.
+This customer: ${p.beds}bd/${p.baths}ba → correct recommendation: ${p.recHours}h, upcharge: $${p.upcharge}.
+CTE = agent materially misstates price/commitment/ETF/voucher AND doesn't correct it → cap score 79, result=FAIL.
 
-YCER-001 RUBRIC - 100 points total, PASS = 80+:
+SCORE (total 100, PASS≥80):
+rapport:5 — professional opener, conversational, listens
+discovery:10 — asks about home, needs, situation; uses answers later
+recommendation:10 — connects discovered need to ForeverClean before pitching
+pitch_quality:20 — explains membership, recurring nature, value; clear structure
+terms_accuracy:25 — $19 first month, $59/mo, 6-month commitment, correct hours, ETF if discussed
+features_benefits:10 — personalizes value to THIS customer's specific life/needs
+clarification:5 — answers customer questions accurately
+closing:15 — confident ask, explores hesitation, secures next step
 
-1. rapport (max 5pts)
-   Full (5): Professional opening, natural conversation, active listening, good control
-   Partial (2-4): Some good behaviors but inconsistent
-   Low (0-1): Unprofessional, poor listening, lost control
+PARTIAL CREDIT always. Score what's observable. overall_score=sum of 8 scores.
 
-2. discovery (max 10pts)
-   Full (9-10): Meaningful open questions, follow-up, identifies home size + cleaning need, uses info later
-   Partial (5-8): Some discovery but missing depth or follow-up
-   Low (0-4): Superficial or no discovery
-
-3. recommendation (max 10pts)
-   Full (9-10): Clear bridge from discovered need to ForeverClean, logical transition
-   Partial (5-8): Recommendation made but weak connection to discovery
-   Low (0-4): Abrupt pitch with no connection to customer needs
-
-4. pitch_quality (max 20pts)
-   Full (18-20): Clear ForeverClean explanation, logical sequence, membership + recurring nature explained, engaging
-   Partial (10-17): Basic pitch but unclear, incomplete, or poorly structured
-   Low (0-9): Substantially incomplete, confusing, or misleading
-
-5. terms_accuracy (max 25pts) ← HIGHEST WEIGHT
-   Score each sub-area:
-   a) Voucher/initial offer explained correctly (5pts)
-   b) Initial charges accurate - $19 first month + applicable upcharge stated separately (4pts)
-   c) Recurring $59/mo stated accurately from Month 2 (4pts)
-   d) 6-month commitment stated correctly (4pts)
-   e) Upcharge/additional hours accurate when applicable (3pts)
-   f) ETF formula accurate if discussed: $35 × hours (3pts)
-   g) No fabrication or misrepresentation (2pts)
-   CTE: Material misstatement of any term that stays uncorrected → cap final score at 79
-
-6. features_benefits (max 10pts)
-   Full (9-10): Connects ForeverClean features to THIS customer's specific discovered needs
-   Partial (5-8): Some personalization but mostly generic
-   Low (0-4): Generic feature listing only, no customer connection
-
-7. clarification (max 5pts)
-   Full (5): Directly and accurately answers customer questions, checks understanding
-   Partial (2-4): Somewhat answers but incomplete or slightly off
-   Low (0-1): Avoids, ignores, or answers incorrectly
-
-8. closing (max 15pts)
-   Full (13-15): Confident ask for commitment, explores hesitation, clear next step
-   Partial (7-12): Attempts close but weak, indirect, or doesn't explore hesitation
-   Low (0-6): No meaningful close attempt despite reasonable opportunity
-
-SCORING PRINCIPLES:
-- Score only what is OBSERVABLE in the transcript
-- Award partial credit — never binary score
-- Do not penalize for missed opportunity if no reasonable chance existed
-- overall_score = sum of all 8 category scores
-- result = "PASS" if overall_score >= 80 AND no uncorrected CTE, else "FAIL"
-- If CTE present and uncorrected: result = "FAIL" regardless of score, cap at 79
-
-Customer context: ${p.name}, ${p.age}yo, ${p.lifestyle}, ${p.household}
-Home: ${p.beds}bd/${p.baths}ba, ${p.area}. Correct recommended hours: ${p.recHours}h.
-Call entry type: ${p.entry.type}
-
-OUTPUT: Return ONLY this JSON with no markdown, no explanation:
-{"overall_score":0,"result":"PASS","cte_present":false,"cte_details":{"incorrect_term":"","agent_statement":"","correct_standard":"","self_corrected":false},"scores":{"rapport":0,"discovery":0,"recommendation":0,"pitch_quality":0,"terms_accuracy":0,"features_benefits":0,"clarification":0,"closing":0},"score_notes":{"rapport":{"strengths":[],"opportunities":[]},"discovery":{"strengths":[],"opportunities":[]},"recommendation":{"strengths":[],"opportunities":[]},"pitch_quality":{"strengths":[],"opportunities":[]},"terms_accuracy":{"strengths":[],"opportunities":[]},"features_benefits":{"strengths":[],"opportunities":[]},"clarification":{"strengths":[],"opportunities":[]},"closing":{"strengths":[],"opportunities":[]}},"hidden_profile_reveal":{"lifestyle":"","primary_priority":"","decision_style":"","cleaning_habit":"","service_experience":"","correct_hours":${p.recHours},"upcharge":${p.upcharge},"buying_likelihood":""},"strengths":[],"areas_for_improvement":[],"pitch_feedback":"","terms_feedback":"","primary_gap":"","recommended_practice":"","transcript_summary":""}`;
+Return ONLY this JSON:
+{"overall_score":0,"result":"FAIL","cte_present":false,"cte_details":{"incorrect_term":"","agent_statement":"","correct_standard":"","self_corrected":false},"scores":{"rapport":0,"discovery":0,"recommendation":0,"pitch_quality":0,"terms_accuracy":0,"features_benefits":0,"clarification":0,"closing":0},"score_notes":{"rapport":{"strengths":[],"opportunities":[]},"discovery":{"strengths":[],"opportunities":[]},"recommendation":{"strengths":[],"opportunities":[]},"pitch_quality":{"strengths":[],"opportunities":[]},"terms_accuracy":{"strengths":[],"opportunities":[]},"features_benefits":{"strengths":[],"opportunities":[]},"clarification":{"strengths":[],"opportunities":[]},"closing":{"strengths":[],"opportunities":[]}},"hidden_profile_reveal":{"lifestyle":"${p.lifestyle}","primary_priority":"","decision_style":"","cleaning_habit":"","service_experience":"","correct_hours":${p.recHours},"upcharge":${p.upcharge},"buying_likelihood":""},"strengths":[],"areas_for_improvement":[],"pitch_feedback":"","terms_feedback":"","primary_gap":"","recommended_practice":"","transcript_summary":""}`;
 }
 
-
-async function llmReply(p,history){
-  const system=buildCustomerPrompt(p);
-  // Use GPT-4o-mini (OpenAI) — fast, reliable, perfect for short customer replies
-  // OpenAI format: system message first, then conversation history
-  const messages=[{role:"system",content:system}];
-  // Map history: agent=user, customer=assistant
-  for(const m of history){
-    messages.push({role:m.speaker==="agent"?"user":"assistant",content:m.text});
-  }
-  const out=await callAPI({
-    model:"gpt-4o-mini",
-    temperature:0.85,
-    max_tokens:80,
-    messages
-  });
-  if(!out)return null;
-  return out.split("\n").filter(l=>{
-    const lo=l.toLowerCase();
-    return !lo.startsWith("agent:")&&!lo.startsWith("apple:")&&!lo.includes("as an ai")&&!lo.includes("great job");
-  }).join(" ").trim()||null;
-}
 
 async function llmEvaluate(p,history){
-  const lines=history.slice(-40);
-  const transcript=lines.map(m=>`${m.speaker==="customer"?p.name:"AGENT"}: ${m.text}`).join("\n");
+  // Only last 20 turns + compress = fits in 10s timeout on free Vercel plan
+  const lines=history.slice(-20);
+  const transcript=lines.map(m=>(m.speaker==="customer"?"C":"A")+": "+m.text).join("\n");
   const system=buildEvaluatorPrompt(p);
-  // Claude requires: system at TOP LEVEL, messages array has only user/assistant roles
-  const out=await callAPI({
-    model:"claude-sonnet-4-6",
-    system:system,
-    temperature:0.1,
-    max_tokens:1500,
-    messages:[
-      {role:"user",content:"TRANSCRIPT TO EVALUATE:\n\n"+transcript+"\n\nReturn valid JSON only. No markdown, no explanation."}
-    ]
-  });
-  if(!out)return null;
+  const ctrl=new AbortController();
+  const to=setTimeout(()=>ctrl.abort(),9000); // 9s — just under Vercel 10s limit
   try{
-    const clean=out.replace(/^```json\s*/,"").replace(/^```\s*/,"").replace(/```\s*$/,"").trim();
-    return JSON.parse(clean);
+    const r=await fetch("/api/evaluate",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({messages:[
+        {role:"system",content:system},
+        {role:"user",content:"TRANSCRIPT (C=customer, A=agent):\n"+transcript}
+      ]}),
+      signal:ctrl.signal
+    });
+    clearTimeout(to);
+    const text=await r.text();
+    if(!r.ok){console.error("Eval error",r.status,text.slice(0,150));return null;}
+    try{return JSON.parse(text);}
+    catch(e){console.error("Eval parse fail",text.slice(0,150));return null;}
   }catch(e){
-    const match=out.match(/\{[\s\S]*\}/);
-    if(match){try{return JSON.parse(match[0]);}catch(e2){}}
-    console.error("Eval JSON parse failed:",out.slice(0,300));
+    clearTimeout(to);
+    console.error("Eval timeout/error:",e.message);
     return null;
   }
 }
@@ -472,35 +405,61 @@ let _lockedVoice=null; // locked per call session for consistency
 function _pickVoice(female){
   const vs=window.speechSynthesis.getVoices();
   if(!vs.length)return null;
-  // Try to find a natural US English voice
-  const femaleNames=["Samantha","Zira","Karen","Moira","Fiona","Victoria","Tessa"];
-  const maleNames=["Daniel","Alex","Fred","Tom","Lee"];
+  // Priority 1: Google US English voices (most natural in Chrome)
+  const googleF=vs.find(v=>v.name==="Google US English"&&female)||
+                vs.find(v=>v.name.includes("Google")&&/en[-_]US/i.test(v.lang));
+  if(googleF)return googleF;
+  // Priority 2: Named natural voices
+  const femaleNames=["Samantha","Zira","Karen","Moira","Fiona","Victoria","Ava","Allison"];
+  const maleNames=["Daniel","Alex","Tom","Lee","Oliver","Aaron","Nicky"];
   const preferred=female?femaleNames:maleNames;
-  // First try preferred name match
   for(const name of preferred){
     const v=vs.find(v=>v.name.includes(name)&&/en/i.test(v.lang));
     if(v)return v;
   }
-  // Fallback: any en-US voice
+  // Priority 3: Any en-US
   return vs.find(v=>/en[-_]US/i.test(v.lang))||vs.find(v=>/en/i.test(v.lang))||vs[0];
+}
+
+// Pre-warm voices on load (Chrome needs this)
+if(window.speechSynthesis){
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged=()=>{ window.speechSynthesis.getVoices(); };
 }
 
 function _speakBrowser(text,onDone){
   if(!("speechSynthesis" in window)){if(onDone)onDone();return;}
   try{
     window.speechSynthesis.cancel();
-    const u=new SpeechSynthesisUtterance(text);
-    // Use locked voice for consistency, pick one if not set
+    // Add natural pauses with commas for breath points
+    const humanized=text
+      .replace(/\. /g,".  ")       // longer pause after period
+      .replace(/\? /g,"?  ")       // pause after question
+      .replace(/! /g,"!  ")        // pause after exclamation
+      .replace(/yeah,/gi,"yeah,")  // keep natural
+      .trim();
+    const u=new SpeechSynthesisUtterance(humanized);
     if(!_lockedVoice&&ST.call){
       _lockedVoice=_pickVoice(ST.call.profile.female);
     }
     if(_lockedVoice)u.voice=_lockedVoice;
-    u.rate=0.95; // slightly slower = more natural
-    u.pitch=ST.call?.profile?.female?1.1:0.9;
+    u.rate=0.88;   // natural conversation pace — not robotic fast
+    u.pitch=ST.call?.profile?.female?1.05:0.92;
+    u.volume=1.0;
     u.onstart=()=>{ST.speaking=true;renderStatus();};
     u.onend=()=>{ST.speaking=false;renderStatus();if(onDone)onDone();};
-    u.onerror=()=>{ST.speaking=false;if(onDone)onDone();};
+    u.onerror=ev=>{
+      // iOS/Safari sometimes fires error on cancel — check if really done
+      if(ev.error==="interrupted"||ev.error==="canceled"){ST.speaking=false;if(onDone)onDone();return;}
+      ST.speaking=false;if(onDone)onDone();
+    };
     window.speechSynthesis.speak(u);
+    // Chrome bug: speech stops after ~15s — keep alive with periodic check
+    const keepAlive=setInterval(()=>{
+      if(!ST.speaking){clearInterval(keepAlive);return;}
+      window.speechSynthesis.pause();
+      window.speechSynthesis.resume();
+    },10000);
   }catch(e){if(onDone)onDone();}
 }
 
@@ -539,7 +498,7 @@ function stopAudio(){_stopAudio();try{window.speechSynthesis&&window.speechSynth
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 function speechSupported(){return !!SR;}
 let _rec=null,_finalText="",_silenceTimer=null,_maxTimer=null,_micGranted=false,_pendingRestart=null,_submitted=false;
-const SILENCE_MS=1300,MAX_LISTEN_MS=45000;
+const SILENCE_MS=900,MAX_LISTEN_MS=45000;
 function _clearTimers(){if(_silenceTimer){clearTimeout(_silenceTimer);_silenceTimer=null;}if(_maxTimer){clearTimeout(_maxTimer);_maxTimer=null;}}
 function _armSilence(){
   _clearTimers();
@@ -853,7 +812,7 @@ function renderDebrief(app){
     <div class="card" style="margin-top:16px;text-align:center;padding:48px 30px">
       <div class="spin-ring" style="width:32px;height:32px;border-width:3px;margin:0 auto 18px;display:block"></div>
       <p style="font-size:15px;font-weight:700;color:var(--purple);margin-bottom:8px">Evaluating your performance</p>
-      <p style="color:var(--muted);font-size:13px;line-height:1.7">Using YCER-001 rubric&#8230; this takes about 20 seconds.<br>Please keep this page open.</p>
+      <p style="color:var(--muted);font-size:13px;line-height:1.7">Using YCER-001 rubric&#8230; this usually takes 15&#8211;30 seconds.<br>Please keep this page open.</p>
     </div>`;
     return;
   }
