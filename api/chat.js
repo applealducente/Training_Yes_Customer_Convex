@@ -10,45 +10,52 @@ module.exports = async function handler(req, res) {
 
   let body;
   try { body = JSON.parse(raw); } catch(e) {
-    return res.status(400).json({ error: "Invalid JSON: " + e.message });
+    return res.status(400).json({ error: "Invalid JSON" });
   }
 
   const model = body.model || "";
-  console.log("[chat] model:", model, "messages:", body.messages?.length);
+  console.log("[chat] model:", model);
 
   // Claude models → Anthropic
   if (model.startsWith("claude")) {
     const key = process.env.ANTHROPIC_API_KEY;
-    if (!key) return res.status(500).json({ error: "ANTHROPIC_API_KEY not set in Vercel env vars" });
+    if (!key) return res.status(500).json({ error: "ANTHROPIC_API_KEY not set" });
     try {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
+        headers: {
+          "x-api-key": key,
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json"
+        },
         body: JSON.stringify(body),
       });
       const data = await r.json();
       console.log("[chat] Anthropic status:", r.status, data.error?.message || "ok");
       return res.status(r.ok ? 200 : r.status).json(data);
     } catch(e) {
-      console.error("[chat] Anthropic fetch error:", e.message);
+      console.error("[chat] Anthropic error:", e.message);
       return res.status(500).json({ error: e.message });
     }
   }
 
-  // OpenAI models (gpt-4o-mini, gpt-4o)
+  // OpenAI models
   const key = process.env.OPENAI_API_KEY;
-  if (!key) return res.status(500).json({ error: "OPENAI_API_KEY not set in Vercel env vars" });
+  if (!key) return res.status(500).json({ error: "OPENAI_API_KEY not set" });
   try {
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json" },
+      headers: {
+        "Authorization": "Bearer " + key,
+        "Content-Type": "application/json"
+      },
       body: JSON.stringify(body),
     });
     const data = await r.json();
     console.log("[chat] OpenAI status:", r.status, data.error?.message || "ok");
     return res.status(r.ok ? 200 : r.status).json(data);
   } catch(e) {
-    console.error("[chat] OpenAI fetch error:", e.message);
+    console.error("[chat] OpenAI error:", e.message);
     return res.status(500).json({ error: e.message });
   }
 };
