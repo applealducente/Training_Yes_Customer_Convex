@@ -318,43 +318,40 @@ FIRST LINE — say exactly this and nothing else: "${p.entry.line}"`;
 
 
 function buildEvaluatorPrompt(p){
-  return `Score this Homeaglow ForeverClean sales call. AGENT only. Return JSON only.
+  const free=p.upcharge
+    ?`BOTH parts needed: (a) the free 3-hour cleaning voucher AND (b) that this home needs ${p.recHours} hours, so there is a $${p.upcharge} upcharge. Voucher alone = false. agent_said must quote the upcharge part`
+    :`free 3-hour cleaning voucher (this home needs only 3 hours, so no upcharge)`;
+  return `You check a Homeaglow ForeverClean practice sales call. The customer is friendly (a "YES customer").
+ONE question decides PASS or FAIL: did the AGENT explain how the service works? Judge the AGENT only. Return JSON only.
 
-PRODUCT (HPOG):
-First month: $19 membership fee. Month 2+: $59/mo. Commitment: 6 months (min 3). Free 3h voucher.
-Upcharge: 4h=+$19, 6h=+$59. ETF=$35xhours if cancel early. Never below $49/mo or 3-month min.
-This customer: ${p.beds}bd/${p.baths}ba → correct recommendation: ${p.recHours}h, upcharge: $${p.upcharge}, ETF: $35 x ${p.recHours}h = $${35*p.recHours} (saying "$35 per hour of the cleaning" or "$${35*p.recHours}" are both CORRECT).
-CTE (critical terms error) = the AGENT SAYS something about price, commitment, ETF, voucher or upcharge that CONTRADICTS the facts above.
-- Before flagging, compare the agent's words to the facts. If they match, it is NOT a CTE.
+FACTS (HPOG):
+First month: $19 membership fee. Month 2+: $59/mo. Commitment: 6 months (min 3, only if the customer pushes back). Free 3h voucher.
+Upcharge: 4h=+$19, 6h=+$59. ETF=$35xhours if cancel early.
+This customer: ${p.beds}bd/${p.baths}ba → needs ${p.recHours}h, upcharge $${p.upcharge}, ETF $${35*p.recHours}.
+
+CHECKLIST — the agent must explain all 4 (said it, or clearly confirmed it when the customer asked):
+1 what_it_is: ForeverClean is a membership with a regular (monthly) cleaning. Just saying the name is NOT enough.
+2 price: $19 for the first month AND $59 a month after that. Both needed.
+3 commitment: the 6-month commitment (or the 3-month minimum if the customer pushed back).
+4 free_cleaning: ${free}.
+For each item: explained=true/false, and agent_said = the agent's exact words copied from the transcript ("" if false).
+Vague or partly right is false (e.g. "a few hours" is not the hours; "a lower price" is not the price).
+
+WRONG TERMS (CTE) = the agent SAYS something about price, commitment, ETF, voucher or upcharge that CONTRADICTS the facts.
 - CORRECT for this customer (NEVER a CTE): "$19 first month", "$59 a month from month 2", "6-month commitment", "free 3-hour voucher", ${p.upcharge?`"$${p.upcharge} upcharge for ${p.recHours} hours"`:`"no upcharge"`}, "ETF $${35*p.recHours}".
-- Leaving a term out is NOT a CTE. Never mentioning the ETF is NOT a CTE. Score missing terms under terms_accuracy only.
-- If you flag a CTE, agent_statement must be the agent's exact wrong words copied from the transcript.
-- If the agent fixes the mistake later in the call, set self_corrected=true.
-- Default is cte_present=false. Most calls have no CTE.
-- CTE and NOT self-corrected → cap score 79, result=FAIL.
+- Leaving something out is NOT a CTE. agent_statement = the agent's exact wrong words.
+- self_corrected=true if the agent later states the correct value.
 
-SCORE (total 100, PASS≥80). Use ONLY the listed point levels — pick the highest level fully met:
-rapport:5 — professional opener, conversational, listens
-  5 = introduces self + Homeaglow AND friendly back-and-forth | 3 = introduces self, little rapport | 0 = no intro
-discovery:10 — asks about home, needs, situation; uses answers later
-  10 = asks home size AND needs/situation AND uses answers later | 6 = home size + one need | 3 = home size only | 0 = none
-recommendation:10 — connects discovered need to ForeverClean before pitching
-  10 = ties recommendation to what customer said + correct hours | 5 = recommends without linking to needs | 0 = none
-pitch_quality:20 — explains membership, recurring nature, value; clear structure
-  20 = membership + recurring monthly cleaning + value, clear order | 12 = most of it, thin on value | 6 = only prices | 0 = no pitch
-terms_accuracy:25 — start at 25, minus 5 for EACH of these not clearly stated: $19 first month, $59/mo from month 2, 6-month commitment, correct hours, correct upcharge. ETF only if discussed (no deduction for not mentioning ETF)
-features_benefits:10 — personalizes value to THIS customer's specific life/needs
-  10 = 2+ benefits tied to this customer's life | 5 = generic benefits | 0 = none
-clarification:5 — answers customer questions accurately
-  5 = answers every question correctly (or customer asked none) | 3 = answers some or vaguely | 0 = ignores or answers wrong
-closing:15 — confident ask, explores hesitation, secures next step
-  15 = clear ask + handles hesitation with a reason + secures a specific next step (day/time) | 10 = ask + handles hesitation, no next step | 5 = asks once, weak or no follow-up | 0 = no ask
-
-Score what's observable. overall_score=sum of 8 scores.
-Trainees never see numbers: in ALL feedback text (notes, strengths, gaps, practice, summary) do NOT mention points, scores or numbers out of a total.
+COACHING — real, specific coaching from a friendly sales coach:
+- Simple, warm English (grade 6). Talk to the agent as "you". No points, scores or numbers out of a total.
+- did_well: 1-2 specific things, quoting or naming what the agent actually did.
+- fix_next: 1-3 items, NEVER empty. First EVERY missed checklist item and wrong term (never skip one); then, if room, the biggest other habit (asking about the customer's home and needs, linking to their life, asking for the booking).
+  On a PASS with nothing missed, give 1-2 of those other habits (for example: no small talk, no question about their home, no ask to book).
+  For each: "what" (one sentence) and "try_saying" = a natural 1-2 sentence line the agent could say to THIS customer next time, using their details. Every dollar amount in try_saying ends with "plus taxes" (e.g. "$19 for the first month plus taxes"). Never suggest the 3-month minimum or a lower price unless the customer pushed back.
+- practice_drill: one short exercise for the next practice call, about their weakest area. Never about something they already did well.
 
 Return ONLY this JSON:
-{"overall_score":0,"result":"FAIL","cte_present":false,"cte_details":{"incorrect_term":"","agent_statement":"","correct_standard":"","self_corrected":false},"scores":{"rapport":0,"discovery":0,"recommendation":0,"pitch_quality":0,"terms_accuracy":0,"features_benefits":0,"clarification":0,"closing":0},"score_notes":{"rapport":{"strengths":[],"opportunities":[]},"discovery":{"strengths":[],"opportunities":[]},"recommendation":{"strengths":[],"opportunities":[]},"pitch_quality":{"strengths":[],"opportunities":[]},"terms_accuracy":{"strengths":[],"opportunities":[]},"features_benefits":{"strengths":[],"opportunities":[]},"clarification":{"strengths":[],"opportunities":[]},"closing":{"strengths":[],"opportunities":[]}},"hidden_profile_reveal":{"lifestyle":"${p.lifestyle}","primary_priority":"","decision_style":"","cleaning_habit":"","service_experience":"","correct_hours":${p.recHours},"upcharge":${p.upcharge},"buying_likelihood":""},"strengths":[],"areas_for_improvement":[],"pitch_feedback":"","terms_feedback":"","primary_gap":"","recommended_practice":"","transcript_summary":""}`;
+{"checklist":{"what_it_is":{"explained":false,"agent_said":""},"price":{"explained":false,"agent_said":""},"commitment":{"explained":false,"agent_said":""},"free_cleaning":{"explained":false,"agent_said":""}},"cte_present":false,"cte_details":{"incorrect_term":"","agent_statement":"","correct_standard":"","self_corrected":false},"coaching":{"did_well":["<specific thing they did well>"],"fix_next":[{"what":"<one sentence: what to fix>","try_saying":"<line to say to this customer>"}],"practice_drill":"<one short exercise>"},"hidden_profile_reveal":{"primary_priority":"","decision_style":"","cleaning_habit":"","service_experience":""},"transcript_summary":""}`;
 }
 
 
@@ -380,39 +377,60 @@ async function llmReply(p,history){
   }).join(" ").trim()||null;
 }
 
-/* Enforce the rubric in code so the grader can't break its own rules */
-const SCORE_MAX={rapport:5,discovery:10,recommendation:10,pitch_quality:20,terms_accuracy:25,features_benefits:10,clarification:5,closing:15};
+/* Enforce the rules in code so the grader can't break them */
+const CHECKLIST=[
+  {key:"what_it_is",label:"What ForeverClean is (a monthly cleaning membership)"},
+  {key:"price",label:"The price ($19 first month, then $59 a month)"},
+  {key:"commitment",label:"The 6-month commitment"},
+  {key:"free_cleaning",label:"The free 3-hour cleaning and any extra hours cost"},
+];
 function _words(s){return String(s||"").toLowerCase().replace(/[^a-z0-9$ ]/g," ").split(/\s+/).filter(w=>w.length>1);}
+// True when most of the quoted words really appear in what the agent said
+function _agentSaid(quote,history){
+  const q=_words(quote);
+  const said=new Set(_words(history.filter(m=>m.speaker==="agent").map(m=>m.text).join(" ")));
+  return q.length>0&&q.filter(w=>said.has(w)).length/q.length>=0.8;
+}
 function _applyScoreRules(res,history){
   if(!res||typeof res!=="object")return res;
-  // A CTE only counts if the quoted wrong words were really said by the agent
-  if(res.cte_present){
-    const quote=_words(res.cte_details&&res.cte_details.agent_statement);
-    const said=new Set(_words(history.filter(m=>m.speaker==="agent").map(m=>m.text).join(" ")));
-    const found=quote.filter(w=>said.has(w)).length;
-    if(!quote.length||found/quote.length<0.8){
-      console.warn("CTE dropped: quote not found in agent's words",res.cte_details);
-      res.cte_present=false;
-    }
+  // A checklist item or wrong term only counts if the agent really said the quoted words
+  const cl=res.checklist||{};
+  for(const c of CHECKLIST){
+    const it=cl[c.key]||{};
+    it.explained=!!it.explained&&_agentSaid(it.agent_said,history);
+    if(!it.explained)it.agent_said="";
+    cl[c.key]=it;
+  }
+  res.checklist=cl;
+  if(res.cte_present&&!_agentSaid(res.cte_details&&res.cte_details.agent_statement,history)){
+    console.warn("CTE dropped: quote not found in agent's words",res.cte_details);
+    res.cte_present=false;
   }
   if(!res.cte_present)res.cte_details={incorrect_term:"",agent_statement:"",correct_standard:"",self_corrected:false};
-  // Total = sum of the 8 scores (each kept within its max); cap 79 only for an uncorrected CTE
-  const scores=res.scores||{};
-  let total=0;
-  for(const k in SCORE_MAX){const v=Math.max(0,Math.min(SCORE_MAX[k],Number(scores[k])||0));scores[k]=v;total+=v;}
-  res.scores=scores;
-  if(res.cte_present&&!res.cte_details.self_corrected)total=Math.min(total,79);
-  res.overall_score=total;
-  res.result=total>=80?"PASS":"FAIL";
+  // PASS = all 4 explained and no uncorrected wrong term
+  res.missed=CHECKLIST.filter(c=>!cl[c.key].explained).map(c=>c.label);
+  // "plus taxes" is required wording whenever a price is quoted
+  const co=res.coaching||(res.coaching={});
+  // Drop any template placeholders the grader copied back ("<...>")
+  co.did_well=(co.did_well||[]).filter(x=>x&&!/^</.test(x));
+  co.fix_next=(co.fix_next||[]).filter(f=>f&&f.what&&!/^</.test(f.what));
+  if(/^</.test(co.practice_drill||""))co.practice_drill="";
+  for(const f of co.fix_next){
+    if(f.try_saying&&/\$\d/.test(f.try_saying)&&!/plus (applicable )?taxes/i.test(f.try_saying))
+      f.try_saying=f.try_saying.replace(/[.!]?\s*$/,", plus taxes.");
+  }
+  const wrongTerm=res.cte_present&&!res.cte_details.self_corrected;
+  res.result=!res.missed.length&&!wrongTerm?"PASS":"FAIL";
   return res;
 }
 
 async function llmEvaluate(p,history){
-  // Grade 3 times at once and keep the middle score, so one odd grading can't swing the result
+  // Grade 3 times at once and go with the majority, so one odd grading can't swing the result
   const runs=(await Promise.all([0,1,2].map(()=>_evalOnce(p,history)))).filter(Boolean);
   if(!runs.length)return null;
-  runs.sort((a,b)=>a.overall_score-b.overall_score);
-  return runs[Math.floor((runs.length-1)/2)];
+  const passes=runs.filter(r=>r.result==="PASS").length;
+  const majority=passes*2>runs.length?"PASS":"FAIL";
+  return runs.find(r=>r.result===majority);
 }
 
 async function _evalOnce(p,history){
@@ -711,8 +729,8 @@ async function endCall(){
       _saveToDash(res,false);
     } else {
       ST.evalStatus="failed";
-      _saveToDash({overall_score:"—",result:"COMPLETED",cte:"—",scores:{},
-        primary_gap:"Evaluation could not complete",
+      _saveToDash({result:"COMPLETED",
+        coaching:{fix_next:[{what:"Evaluation could not complete"}]},
         transcript_summary:ST.history.map(m=>(m.speaker==="customer"?ST.call.profile.name:"Agent")+": "+m.text).join(" | ")
       },false);
     }
@@ -724,8 +742,10 @@ function _saveToDash(sc,_unused){
   if(!ST.call||ST._dashSaved)return;
   ST._dashSaved=true;
   const p=ST.call.profile;
-  const scores=(sc&&sc.scores)||{};
-  const hasScores=sc&&sc.overall_score&&sc.overall_score!=="—";
+  const done=sc&&(sc.result==="PASS"||sc.result==="FAIL");
+  const cl=(sc&&sc.checklist)||{};
+  const yn=k=>!done?"—":cl[k]&&cl[k].explained?"YES":"NO";
+  const fix=((sc&&sc.coaching&&sc.coaching.fix_next)||[]).filter(f=>f&&f.what);
   const entry={
     timestamp:new Date().toLocaleString(),
     agent_name:ST.agent,
@@ -735,18 +755,15 @@ function _saveToDash(sc,_unused){
     date_hired:ST.dateHired||"",
     scenario:(p.lifestyle||"")+" — "+(p.household||""),
     call_entry:p.entry.type||"",
-    overall_score:hasScores?String(sc.overall_score):"—",
-    result:hasScores?(sc.result||"FAIL"):"COMPLETED",
-    cte:sc&&sc.cte_present===true?"YES":sc&&sc.cte_present===false?"NO":"—",
-    rapport:scores.rapport!=null?String(scores.rapport):"—",
-    discovery:scores.discovery!=null?String(scores.discovery):"—",
-    recommendation:scores.recommendation!=null?String(scores.recommendation):"—",
-    pitch_quality:scores.pitch_quality!=null?String(scores.pitch_quality):"—",
-    terms_accuracy:scores.terms_accuracy!=null?String(scores.terms_accuracy):"—",
-    features_benefits:scores.features_benefits!=null?String(scores.features_benefits):"—",
-    clarification:scores.clarification!=null?String(scores.clarification):"—",
-    closing:scores.closing!=null?String(scores.closing):"—",
-    primary_gap:sc&&sc.primary_gap?sc.primary_gap:"",
+    result:done?sc.result:"COMPLETED",
+    what_it_is:yn("what_it_is"),
+    price:yn("price"),
+    commitment:yn("commitment"),
+    free_cleaning:yn("free_cleaning"),
+    cte:!done?"—":sc.cte_present?(sc.cte_details&&sc.cte_details.self_corrected?"YES (fixed)":"YES"):"NO",
+    missed:done?(sc.missed||[]).join("; "):"",
+    coaching_fix:fix.map(f=>f.what+(f.try_saying?' Try saying: "'+f.try_saying+'"':"")).join(" | "),
+    practice_drill:(sc&&sc.coaching&&sc.coaching.practice_drill)||"",
     transcript_summary:sc&&sc.transcript_summary
       ?sc.transcript_summary
       :ST.history.slice(-20).map(m=>(m.speaker==="customer"?p.name:"Agent")+": "+m.text).join(" | "),
@@ -893,7 +910,7 @@ function renderDebrief(app){
     <div class="card" style="margin-top:16px;text-align:center;padding:48px 30px">
       <div class="spin-ring" style="width:32px;height:32px;border-width:3px;margin:0 auto 18px;display:block"></div>
       <p style="font-size:15px;font-weight:700;color:var(--purple);margin-bottom:8px">Evaluating your performance</p>
-      <p style="color:var(--muted);font-size:13px;line-height:1.7">Using YCER-001 rubric&#8230; this usually takes 15&#8211;30 seconds.<br>Please keep this page open.</p>
+      <p style="color:var(--muted);font-size:13px;line-height:1.7">Checking your call&#8230; this usually takes 15&#8211;30 seconds.<br>Please keep this page open.</p>
     </div>`;
     return;
   }
@@ -924,60 +941,62 @@ function renderDebrief(app){
     return;
   }
 
-  // Trainees see Pass/Fail and tips only; number scores go to the Sheet and dashboard
-  const notes=sc.score_notes||{};
+  // Trainees see Pass/Fail, the 4-item checklist and coaching (no number scores)
   const result=sc.result||"FAIL";
   const rc=result==="PASS"?"var(--good)":"var(--bad)";
   const hp=sc.hidden_profile_reveal||{};
-
-  const rubric=[
-    {key:"rapport",label:"Rapport & Conversation Control",max:5},
-    {key:"discovery",label:"Discovery & Need Identification",max:10},
-    {key:"recommendation",label:"Recommendation & Transition",max:10},
-    {key:"pitch_quality",label:"ForeverClean Pitch Quality",max:20},
-    {key:"terms_accuracy",label:"ForeverClean Terms Accuracy",max:25},
-    {key:"features_benefits",label:"Customer-Specific Value / FAB",max:10},
-    {key:"clarification",label:"Customer Questions & Clarification",max:5},
-    {key:"closing",label:"Closing & Commitment",max:15},
-  ];
-
-  function catNotes(key){
-    const n=notes[key];if(!n)return "";
-    const ev=n.evidence?`<div style="font-size:11.5px;color:var(--dim);font-style:italic;margin:4px 0 6px;line-height:1.5">${esc(n.evidence)}</div>`:"";
-    const s=(n.strengths||[]).map(x=>`<div class="li" style="font-size:12px">${esc(x)}</div>`).join("");
-    const o=(n.opportunities||[]).map(x=>`<div class="li" style="font-size:12px">${esc(x)}</div>`).join("");
-    return ev
-      +(s?`<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--good);font-weight:700;margin:6px 0 3px">Strengths</div>${s}`:"")
-      +(o?`<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--peach);font-weight:700;margin:6px 0 3px">Opportunities</div>${o}`:"");
-  }
+  const cl=sc.checklist||{};
+  const co=sc.coaching||{};
 
   const cteSection=sc.cte_present?`
   <div class="cte-box">
-    <div class="section-title">&#9888; Critical Terms Error (CTE)</div>
-    ${sc.cte_details?.incorrect_term?`<p style="font-size:13px;margin-bottom:6px"><b>Incorrect term:</b> ${esc(sc.cte_details.incorrect_term)}</p>`:""}
-    ${sc.cte_details?.agent_statement?`<p style="font-size:13px;margin-bottom:6px"><b>Agent said:</b> "${esc(sc.cte_details.agent_statement)}"</p>`:""}
-    ${sc.cte_details?.correct_standard?`<p style="font-size:13px;margin-bottom:6px"><b>Correct standard:</b> ${esc(sc.cte_details.correct_standard)}</p>`:""}
-    <p style="font-size:13px;color:${sc.cte_details?.self_corrected?"var(--good)":"var(--bad)"}"><b>${sc.cte_details?.self_corrected?"&#10003; Self-corrected during call":"&#10007; NOT corrected — this makes the call a FAIL"}</b></p>
+    <div class="section-title">&#9888; Wrong Terms Said</div>
+    ${sc.cte_details?.agent_statement?`<p style="font-size:13px;margin-bottom:6px"><b>You said:</b> "${esc(sc.cte_details.agent_statement)}"</p>`:""}
+    ${sc.cte_details?.correct_standard?`<p style="font-size:13px;margin-bottom:6px"><b>Correct:</b> ${esc(sc.cte_details.correct_standard)}</p>`:""}
+    <p style="font-size:13px;color:${sc.cte_details?.self_corrected?"var(--good)":"var(--bad)"}"><b>${sc.cte_details?.self_corrected?"&#10003; You fixed it during the call":"&#10007; Not fixed during the call — this makes the call a FAIL"}</b></p>
   </div>`:""
 
   app.innerHTML=`
   <div class="topbar"><img src="${LOGO_DATA_URI}" class="brandlogo" alt="Convex"/><span class="pill">YES Customer Simulator</span><span class="grow"></span></div>
-  <div class="kicker">Readiness Debrief &#8226; YCER-001</div>
+  <div class="kicker">Practice Call Debrief</div>
   <h1>${esc(ST.agent)}</h1>
 
   <div class="card" style="margin-top:16px;text-align:center;padding:30px">
     <span class="pass-badge ${result==="PASS"?"pass":"fail"}" style="font-size:22px;padding:10px 32px">${esc(result)}</span>
-    <div style="margin-top:12px;font-size:12px;color:var(--muted)">This practice call is a check-in only. Use the tips below to improve.</div>
+    <p style="margin-top:14px;font-size:14px;font-weight:700;color:${rc}">${result==="PASS"?"You explained how ForeverClean works. &#127881;":"You didn't fully explain how ForeverClean works yet."}</p>
+    <div style="margin-top:6px;font-size:12px;color:var(--muted)">This practice call is a check-in only. Use the coaching below to improve.</div>
+  </div>
+
+  <div class="card">
+    <div class="section-title" style="margin-top:0">Did you explain how the service works?</div>
+    ${CHECKLIST.map(c=>{const it=cl[c.key]||{};return `
+    <div class="rubric-row">
+      <div style="flex:1">
+        <div class="rubric-label">${it.explained?"&#9989;":"&#10060;"} ${esc(c.label)}</div>
+        <div class="rubric-notes">${it.explained&&it.agent_said?`You said: "${esc(it.agent_said)}"`:"Not explained clearly"}</div>
+      </div>
+    </div>`;}).join("")}
   </div>
 
   ${cteSection}
+
+  <div class="card" style="border-color:var(--purple);border-width:2px">
+    <div class="section-title" style="margin-top:0">&#127891; Your Coaching</div>
+    ${(co.did_well||[]).length?`<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--good);font-weight:700;margin:6px 0 4px">What you did well</div>${co.did_well.map(x=>`<div class="li">${esc(x)}</div>`).join("")}`:""}
+    ${(co.fix_next||[]).filter(f=>f&&f.what).length?`<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--peach);font-weight:700;margin:14px 0 4px">Fix this next</div>${co.fix_next.filter(f=>f&&f.what).map((f,i)=>`
+      <div style="margin-bottom:10px">
+        <div class="li"><b>${i+1}.</b> ${esc(f.what)}</div>
+        ${f.try_saying?`<div style="margin:4px 0 0 18px;padding:8px 12px;border-left:3px solid var(--mint);background:rgba(133,201,184,.08);font-size:13px;border-radius:6px"><b>Try saying:</b> &#8220;${esc(f.try_saying)}&#8221;</div>`:""}
+      </div>`).join("")}`:""}
+    ${co.practice_drill?`<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--purple);font-weight:700;margin:14px 0 4px">Practice drill for next time</div><p style="font-size:13.5px">${esc(co.practice_drill)}</p>`:""}
+  </div>
 
   <div class="card">
     <div class="section-title" style="margin-top:0">Hidden Customer Profile &#128065;</div>
     <div class="profile-grid">
       <div class="profile-item"><b>Name</b><br>${esc(p.name)}</div>
       <div class="profile-item"><b>Age</b><br>${esc(p.age)}</div>
-      <div class="profile-item"><b>Lifestyle</b><br>${esc(hp.lifestyle||p.lifestyle)}</div>
+      <div class="profile-item"><b>Lifestyle</b><br>${esc(p.lifestyle)}</div>
       <div class="profile-item"><b>Priority</b><br>${esc(hp.primary_priority||p.priority)}</div>
       <div class="profile-item"><b>Decision Style</b><br>${esc(hp.decision_style||p.decision)}</div>
       <div class="profile-item"><b>Service Exp.</b><br>${esc(hp.service_experience||p.serviceExp)}</div>
@@ -986,32 +1005,7 @@ function renderDebrief(app){
     </div>
   </div>
 
-  <div class="card">
-    <div class="section-title" style="margin-top:0">Skill Feedback &#8212; YCER-001</div>
-    ${rubric.map(r=>`
-    <div class="rubric-row">
-      <div style="flex:1">
-        <div class="rubric-label">${r.label}</div>
-        <div class="rubric-notes">${catNotes(r.key)}</div>
-      </div>
-    </div>`).join("")}
-  </div>
-
-  ${(sc.strengths||[]).length?`<div class="card"><div class="section-title" style="margin-top:0">&#10024; Strengths Observed</div>${(sc.strengths||[]).map((s,i)=>`<div class="li"><b>${i+1}.</b> ${esc(s)}</div>`).join("")}</div>`:""}
-  ${(sc.areas_for_improvement||[]).length?`<div class="card"><div class="section-title" style="margin-top:0">&#128161; Areas for Improvement</div>${(sc.areas_for_improvement||[]).map((s,i)=>`<div class="li"><b>${i+1}.</b> ${esc(s)}</div>`).join("")}</div>`:""}
-
-  ${sc.pitch_feedback?`<div class="card"><div class="section-title" style="margin-top:0">ForeverClean Pitch Feedback</div><p style="font-size:13.5px;line-height:1.6;color:var(--ink)">${esc(sc.pitch_feedback)}</p></div>`:""}
-  ${sc.terms_feedback?`<div class="card"><div class="section-title" style="margin-top:0">Terms Accuracy Feedback</div><p style="font-size:13.5px;line-height:1.6;color:var(--ink)">${esc(sc.terms_feedback)}</p></div>`:""}
   ${sc.transcript_summary?`<div class="card"><div class="section-title" style="margin-top:0">Call Summary</div><p style="font-size:13.5px;line-height:1.7;color:var(--muted)">${esc(sc.transcript_summary)}</p></div>`:""}
-
-  <div class="card" style="border-color:${rc};border-width:2px">
-    <div class="section-title" style="margin-top:0;color:${rc}">&#127919; Final Assessment</div>
-    <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px">
-      <span class="pass-badge ${result==="PASS"?"pass":"fail"}" style="font-size:14px;padding:6px 18px">${esc(result)}</span>
-    </div>
-    ${sc.primary_gap?`<div class="section-title">Primary Gap</div><p style="font-size:13.5px;margin-bottom:10px">${esc(sc.primary_gap)}</p>`:""}
-    ${sc.recommended_practice?`<div class="section-title">Recommended Practice</div><p style="font-size:13.5px">${esc(sc.recommended_practice)}</p>`:""}
-  </div>
 
   <div class="row" style="margin-top:20px;gap:10px">
     <button class="btn ghost" id="backHome">&#8592; Change details</button>
@@ -1038,21 +1032,12 @@ function renderDashboard(app){
   const total=filtered.length;
   const passed=filtered.filter(r=>r.result==="PASS").length;
   const failed=filtered.filter(r=>r.result==="FAIL").length;
-  const numericScores=filtered.map(r=>Number(r.overall_score)).filter(n=>!isNaN(n)&&n>0);
-  const avg=numericScores.length?Math.round(numericScores.reduce((a,b)=>a+b,0)/numericScores.length):null;
   const passRate=passed+failed>0?Math.round(passed/(passed+failed)*100):null;
-
-  function avgSkill(key){const vals=filtered.map(r=>Number(r[key])).filter(n=>!isNaN(n)&&n>0);return vals.length?(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1):null;}
-  const skills=[
-    {key:"rapport",label:"Rapport",max:5},
-    {key:"discovery",label:"Discovery",max:10},
-    {key:"recommendation",label:"Recommendation",max:10},
-    {key:"pitch_quality",label:"Pitch Quality",max:20},
-    {key:"terms_accuracy",label:"Terms Accuracy",max:25},
-    {key:"features_benefits",label:"FAB",max:10},
-    {key:"clarification",label:"Clarification",max:5},
-    {key:"closing",label:"Closing",max:15},
-  ];
+  const wrongTerms=filtered.filter(r=>r.cte==="YES").length;
+  // How often each checklist item was explained
+  function itemRate(key){const v=filtered.filter(r=>r[key]==="YES"||r[key]==="NO");return v.length?Math.round(v.filter(r=>r[key]==="YES").length/v.length*100):null;}
+  const yesCount=r=>CHECKLIST.filter(c=>r[c.key]==="YES").length;
+  const hasChecklist=r=>CHECKLIST.some(c=>r[c.key]==="YES"||r[c.key]==="NO");
 
   app.innerHTML=`
   <div class="topbar">
@@ -1076,8 +1061,8 @@ function renderDashboard(app){
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;margin-top:4px">Pass Rate</div>
     </div>
     <div class="card" style="padding:18px;text-align:center">
-      <div style="font-family:var(--display);font-size:38px;font-weight:800;color:var(--good)">${avg??'—'}</div>
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;margin-top:4px">Avg Score</div>
+      <div style="font-family:var(--display);font-size:38px;font-weight:800;color:var(--gold)">${wrongTerms}</div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;margin-top:4px">Wrong Terms</div>
     </div>
     <div class="card" style="padding:18px;text-align:center">
       <div style="font-family:var(--display);font-size:38px;font-weight:800;color:var(--bad)">${failed}</div>
@@ -1085,23 +1070,17 @@ function renderDashboard(app){
     </div>
   </div>
 
-  <!-- Skill averages -->
-  ${numericScores.length>0?`
+  <!-- How often each item was explained -->
+  ${filtered.some(hasChecklist)?`
   <div class="card" style="margin-bottom:16px">
-    <div class="section-title" style="margin-top:0">Average Score by Skill</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 20px">
-      ${skills.map(s=>{
-        const v=avgSkill(s.key);
-        const pct=v?Math.round(Number(v)/s.max*100):0;
-        return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0">
-          <span style="font-size:12px;color:var(--muted);min-width:90px">${s.label}</span>
-          <div style="flex:1;background:var(--surface2);border-radius:99px;height:6px">
-            <div style="width:${pct}%;background:linear-gradient(90deg,var(--purple),var(--lavender));height:6px;border-radius:99px;transition:width .3s"></div>
-          </div>
-          <span style="font-size:12px;font-weight:700;color:var(--purple);min-width:28px;text-align:right">${v??'—'}</span>
-        </div>`;
-      }).join("")}
-    </div>
+    <div class="section-title" style="margin-top:0">How Often Each Part Was Explained</div>
+    ${CHECKLIST.map(c=>{const pct=itemRate(c.key);return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0">
+      <span style="font-size:12px;color:var(--muted);min-width:200px">${esc(c.label)}</span>
+      <div style="flex:1;background:var(--surface2);border-radius:99px;height:6px">
+        <div style="width:${pct||0}%;background:linear-gradient(90deg,var(--purple),var(--lavender));height:6px;border-radius:99px"></div>
+      </div>
+      <span style="font-size:12px;font-weight:700;color:var(--purple);min-width:36px;text-align:right">${pct===null?"—":pct+"%"}</span>
+    </div>`;}).join("")}
   </div>`:""}
 
   <!-- Filters -->
@@ -1122,8 +1101,8 @@ function renderDashboard(app){
     :filtered.map((r,i)=>{
       const isPASS=r.result==="PASS";
       const isFAIL=r.result==="FAIL";
-      const score=r.overall_score&&r.overall_score!=="—"?Number(r.overall_score):null;
-      const scoreColor=score>=80?"var(--good)":score>=70?"var(--gold)":score?"var(--bad)":"var(--muted)";
+      const score=hasChecklist(r)?yesCount(r)+"/4":null;
+      const scoreColor=isPASS?"var(--good)":isFAIL?"var(--bad)":"var(--muted)";
       const badgeBg=isPASS?"rgba(124,201,164,.15)":isFAIL?"rgba(232,150,160,.15)":"rgba(196,176,232,.15)";
       const badgeColor=isPASS?"var(--good)":isFAIL?"var(--bad)":"var(--lavender)";
       const badgeBorder=isPASS?"rgba(124,201,164,.4)":isFAIL?"rgba(232,150,160,.4)":"rgba(196,176,232,.4)";
@@ -1133,7 +1112,7 @@ function renderDashboard(app){
         <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;cursor:pointer" id="drow-${i}">
           <!-- Score circle -->
           <div style="width:52px;height:52px;border-radius:50%;background:${score?"linear-gradient(135deg,"+scoreColor+","+scoreColor+"33)":"var(--surface2)"};display:flex;align-items:center;justify-content:center;flex-shrink:0;border:2px solid ${score?scoreColor:"var(--line)"}">
-            <span style="font-family:var(--display);font-size:${score&&score>=100?14:16}px;font-weight:800;color:${score?scoreColor:"var(--muted)"}">${score??'—'}</span>
+            <span style="font-family:var(--display);font-size:16px;font-weight:800;color:${score?scoreColor:"var(--muted)"}">${score??'—'}</span>
           </div>
           <!-- Name + info -->
           <div style="flex:1;min-width:0">
@@ -1150,22 +1129,12 @@ function renderDashboard(app){
         </div>
         <!-- Skill breakdown (collapsed by default) -->
         <div id="ddetail-${i}" style="border-top:1.5px solid var(--line);padding:14px 18px;background:var(--surface2)">
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
-            ${[
-              {k:"rapport",l:"Rapport",m:5},
-              {k:"discovery",l:"Discovery",m:10},
-              {k:"recommendation",l:"Rec.",m:10},
-              {k:"pitch_quality",l:"Pitch",m:20},
-              {k:"terms_accuracy",l:"Terms",m:25},
-              {k:"features_benefits",l:"FAB",m:10},
-              {k:"clarification",l:"Clarif.",m:5},
-              {k:"closing",l:"Closing",m:15},
-            ].map(s=>`<div style="background:var(--surface);border-radius:10px;padding:8px;text-align:center;border:1px solid var(--line)">
-              <div style="font-size:16px;font-weight:800;color:var(--purple)">${r[s.k]||"—"}</div>
-              <div style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-top:2px">${s.l}/${s.m}</div>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px">
+            ${CHECKLIST.map(c=>`<div style="background:var(--surface);border-radius:10px;padding:8px;border:1px solid var(--line);font-size:12px">
+              ${r[c.key]==="YES"?"&#9989;":r[c.key]==="NO"?"&#10060;":"&#8212;"} ${esc(c.label)}
             </div>`).join("")}
           </div>
-          ${r.primary_gap?`<div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--purple);font-weight:700;margin-bottom:4px">Primary Gap</div><p style="font-size:13px;color:var(--ink);margin-bottom:10px">${esc(r.primary_gap)}</p>`:""}
+          ${r.coaching_fix?`<div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--purple);font-weight:700;margin-bottom:4px">Coaching: Fix Next</div><p style="font-size:13px;color:var(--ink);margin-bottom:10px">${esc(r.coaching_fix)}</p>`:""}
           ${r.transcript_summary?`<div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--purple);font-weight:700;margin-bottom:4px">Summary</div><p style="font-size:12.5px;color:var(--muted);line-height:1.6">${esc(r.transcript_summary)}</p>`:""}
           <div style="font-size:11px;color:var(--dim);margin-top:8px">Team: ${esc(r.team||"—")} &bull; Date Hired: ${esc(r.date_hired||"—")} &bull; Entry: ${esc(r.call_entry||"—")}</div>
         </div>
@@ -1194,11 +1163,10 @@ function renderDashboard(app){
   });
 
   document.getElementById("dlCsv").onclick=()=>{
-    const cols=["Timestamp","Result","Score","Agent Name","Email","TL Name","Team","Date Hired","Scenario","CTE","Rapport","Discovery","Recommendation","Pitch Quality","Terms Accuracy","FAB","Clarification","Closing","Primary Gap","Summary"];
+    const cols=["Timestamp","Result","Agent Name","Email","TL Name","Team","Date Hired","Scenario","What It Is","Price","Commitment","Free Cleaning & Hours","Wrong Terms","What Was Missed","Coaching: Fix Next","Practice Drill","Summary"];
     const csvRows=[cols.join(","),...filtered.map(r=>[
-      r.timestamp,r.result,r.overall_score,r.agent_name,r.agent_email,r.tl_name,r.team,r.date_hired,
-      r.scenario,r.cte,r.rapport,r.discovery,r.recommendation,r.pitch_quality,
-      r.terms_accuracy,r.features_benefits,r.clarification,r.closing,r.primary_gap,r.transcript_summary
+      r.timestamp,r.result,r.agent_name,r.agent_email,r.tl_name,r.team,r.date_hired,
+      r.scenario,r.what_it_is,r.price,r.commitment,r.free_cleaning,r.cte,r.missed,r.coaching_fix,r.practice_drill,r.transcript_summary
     ].map(v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"').join(","))];
     const blob=new Blob([csvRows.join("\n")],{type:"text/csv"});
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);

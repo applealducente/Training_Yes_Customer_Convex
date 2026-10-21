@@ -11,20 +11,17 @@ const COLUMNS = [
   ["tl_name", "Team Lead"],
   ["date_hired", "Date Hired"],
   ["result", "Result"],
-  ["overall_score", "Score (out of 100)"],
-  ["cte", "Wrong Terms (CTE)"],
-  ["rapport", "Rapport /5"],
-  ["discovery", "Discovery /10"],
-  ["recommendation", "Recommendation /10"],
-  ["pitch_quality", "Pitch /20"],
-  ["terms_accuracy", "Terms Accuracy /25"],
-  ["features_benefits", "Features & Benefits /10"],
-  ["clarification", "Answering Questions /5"],
-  ["closing", "Closing /15"],
+  ["what_it_is", "Explained: What It Is"],
+  ["price", "Explained: Price"],
+  ["commitment", "Explained: Commitment"],
+  ["free_cleaning", "Explained: Free Cleaning & Hours"],
+  ["cte", "Wrong Terms Said"],
+  ["missed", "What Was Missed"],
+  ["coaching_fix", "Coaching: Fix Next"],
+  ["practice_drill", "Practice Drill"],
   ["scenario", "Customer Type"],
   ["call_entry", "Call Opening"],
-  ["primary_gap", "Main Thing to Work On"],
-  ["transcript_summary", "Call Transcript"],
+  ["transcript_summary", "Call Summary"],
 ];
 
 function doPost(e) {
@@ -34,11 +31,10 @@ function doPost(e) {
     const data = JSON.parse(e.postData.contents);
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(COLUMNS.map(c => c[1]));
-      sheet.getRange(1, 1, 1, COLUMNS.length).setFontWeight("bold");
-      sheet.setFrozenRows(1);
-    }
+    // Keep the header row in step with COLUMNS, so new columns show up by themselves
+    const header = sheet.getRange(1, 1, 1, COLUMNS.length);
+    header.setValues([COLUMNS.map(c => c[1])]).setFontWeight("bold");
+    sheet.setFrozenRows(1);
     // A leading = + - @ would make Sheets treat the text as a formula
     const row = COLUMNS.map(c => {
       const v = data[c[0]] == null ? "" : String(data[c[0]]);
