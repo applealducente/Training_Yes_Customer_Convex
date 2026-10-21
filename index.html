@@ -677,7 +677,7 @@ function _saveToDash(sc,_unused){
   const p=ST.call.profile;
   const scores=(sc&&sc.scores)||{};
   const hasScores=sc&&sc.overall_score&&sc.overall_score!=="—";
-  dashAdd({
+  const entry={
     timestamp:new Date().toLocaleString(),
     agent_name:ST.agent,
     agent_email:ST.email,
@@ -701,7 +701,12 @@ function _saveToDash(sc,_unused){
     transcript_summary:sc&&sc.transcript_summary
       ?sc.transcript_summary
       :ST.history.slice(-20).map(m=>(m.speaker==="customer"?p.name:"Agent")+": "+m.text).join(" | "),
-  });
+  };
+  dashAdd(entry);
+  // Also send to the shared Google Sheet (via /api/save-result); local copy above stays as backup
+  fetch("/api/save-result",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(entry)})
+    .then(r=>{if(!r.ok)console.error("Sheet save failed",r.status);})
+    .catch(e=>console.error("Sheet save error",e.message));
 }
 
 /* ============================================================
