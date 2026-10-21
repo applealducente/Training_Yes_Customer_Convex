@@ -323,15 +323,21 @@ function buildEvaluatorPrompt(p){
 PRODUCT (HPOG):
 First month: $19 membership fee. Month 2+: $59/mo. Commitment: 6 months (min 3). Free 3h voucher.
 Upcharge: 4h=+$19, 6h=+$59. ETF=$35xhours if cancel early. Never below $49/mo or 3-month min.
-This customer: ${p.beds}bd/${p.baths}ba → correct recommendation: ${p.recHours}h, upcharge: $${p.upcharge}.
-CTE = agent materially misstates price/commitment/ETF/voucher AND doesn't correct it → cap score 79, result=FAIL.
+This customer: ${p.beds}bd/${p.baths}ba → correct recommendation: ${p.recHours}h, upcharge: $${p.upcharge}, ETF: $35 x ${p.recHours}h = $${35*p.recHours} (saying "$35 per hour of the cleaning" or "$${35*p.recHours}" are both CORRECT).
+CTE (critical terms error) = the AGENT SAYS something about price, commitment, ETF, voucher or upcharge that CONTRADICTS the facts above.
+- Before flagging, compare the agent's words to the facts. If they match, it is NOT a CTE.
+- Leaving a term out is NOT a CTE. Never mentioning the ETF is NOT a CTE. Score missing terms under terms_accuracy only.
+- If you flag a CTE, agent_statement must be the agent's exact wrong words copied from the transcript.
+- If the agent fixes the mistake later in the call, set self_corrected=true.
+- Default is cte_present=false. Most calls have no CTE.
+- CTE and NOT self-corrected → cap score 79, result=FAIL.
 
 SCORE (total 100, PASS≥80):
 rapport:5 — professional opener, conversational, listens
 discovery:10 — asks about home, needs, situation; uses answers later
 recommendation:10 — connects discovered need to ForeverClean before pitching
 pitch_quality:20 — explains membership, recurring nature, value; clear structure
-terms_accuracy:25 — $19 first month, $59/mo, 6-month commitment, correct hours, ETF if discussed
+terms_accuracy:25 — $19 first month, $59/mo, 6-month commitment, correct hours and upcharge, ETF only if discussed (no deduction for not mentioning ETF)
 features_benefits:10 — personalizes value to THIS customer's specific life/needs
 clarification:5 — answers customer questions accurately
 closing:15 — confident ask, explores hesitation, secures next step
@@ -365,6 +371,33 @@ async function llmReply(p,history){
   }).join(" ").trim()||null;
 }
 
+/* Enforce the rubric in code so the grader can't break its own rules */
+const SCORE_MAX={rapport:5,discovery:10,recommendation:10,pitch_quality:20,terms_accuracy:25,features_benefits:10,clarification:5,closing:15};
+function _words(s){return String(s||"").toLowerCase().replace(/[^a-z0-9$ ]/g," ").split(/\s+/).filter(w=>w.length>1);}
+function _applyScoreRules(res,history){
+  if(!res||typeof res!=="object")return res;
+  // A CTE only counts if the quoted wrong words were really said by the agent
+  if(res.cte_present){
+    const quote=_words(res.cte_details&&res.cte_details.agent_statement);
+    const said=new Set(_words(history.filter(m=>m.speaker==="agent").map(m=>m.text).join(" ")));
+    const found=quote.filter(w=>said.has(w)).length;
+    if(!quote.length||found/quote.length<0.8){
+      console.warn("CTE dropped: quote not found in agent's words",res.cte_details);
+      res.cte_present=false;
+    }
+  }
+  if(!res.cte_present)res.cte_details={incorrect_term:"",agent_statement:"",correct_standard:"",self_corrected:false};
+  // Total = sum of the 8 scores (each kept within its max); cap 79 only for an uncorrected CTE
+  const scores=res.scores||{};
+  let total=0;
+  for(const k in SCORE_MAX){const v=Math.max(0,Math.min(SCORE_MAX[k],Number(scores[k])||0));scores[k]=v;total+=v;}
+  res.scores=scores;
+  if(res.cte_present&&!res.cte_details.self_corrected)total=Math.min(total,79);
+  res.overall_score=total;
+  res.result=total>=80?"PASS":"FAIL";
+  return res;
+}
+
 async function llmEvaluate(p,history){
   // Only last 20 turns + compress = fits in 10s timeout on free Vercel plan
   const lines=history.slice(-20);
@@ -385,7 +418,7 @@ async function llmEvaluate(p,history){
     clearTimeout(to);
     const text=await r.text();
     if(!r.ok){console.error("Eval error",r.status,text.slice(0,150));return null;}
-    try{return JSON.parse(text);}
+    try{return _applyScoreRules(JSON.parse(text),lines);}
     catch(e){console.error("Eval parse fail",text.slice(0,150));return null;}
   }catch(e){
     clearTimeout(to);
