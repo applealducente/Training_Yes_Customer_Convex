@@ -326,6 +326,7 @@ Upcharge: 4h=+$19, 6h=+$59. ETF=$35xhours if cancel early. Never below $49/mo or
 This customer: ${p.beds}bd/${p.baths}ba → correct recommendation: ${p.recHours}h, upcharge: $${p.upcharge}, ETF: $35 x ${p.recHours}h = $${35*p.recHours} (saying "$35 per hour of the cleaning" or "$${35*p.recHours}" are both CORRECT).
 CTE (critical terms error) = the AGENT SAYS something about price, commitment, ETF, voucher or upcharge that CONTRADICTS the facts above.
 - Before flagging, compare the agent's words to the facts. If they match, it is NOT a CTE.
+- CORRECT for this customer (NEVER a CTE): "$19 first month", "$59 a month from month 2", "6-month commitment", "free 3-hour voucher", ${p.upcharge?`"$${p.upcharge} upcharge for ${p.recHours} hours"`:`"no upcharge"`}, "ETF $${35*p.recHours}".
 - Leaving a term out is NOT a CTE. Never mentioning the ETF is NOT a CTE. Score missing terms under terms_accuracy only.
 - If you flag a CTE, agent_statement must be the agent's exact wrong words copied from the transcript.
 - If the agent fixes the mistake later in the call, set self_corrected=true.
