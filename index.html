@@ -406,6 +406,14 @@ function _applyScoreRules(res,history){
 }
 
 async function llmEvaluate(p,history){
+  // Grade 3 times at once and keep the middle score, so one odd grading can't swing the result
+  const runs=(await Promise.all([0,1,2].map(()=>_evalOnce(p,history)))).filter(Boolean);
+  if(!runs.length)return null;
+  runs.sort((a,b)=>a.overall_score-b.overall_score);
+  return runs[Math.floor((runs.length-1)/2)];
+}
+
+async function _evalOnce(p,history){
   // Only last 20 turns + compress = fits in 10s timeout on free Vercel plan
   const lines=history.slice(-20);
   const transcript=lines.map(m=>(m.speaker==="customer"?"C":"A")+": "+m.text).join("\n");
