@@ -344,6 +344,28 @@ Return ONLY this JSON:
 }
 
 
+async function llmReply(p,history){
+  const system=buildCustomerPrompt(p);
+  // Use GPT-4o-mini (OpenAI) — fast, reliable, perfect for short customer replies
+  // OpenAI format: system message first, then conversation history
+  const messages=[{role:"system",content:system}];
+  // Map history: agent=user, customer=assistant
+  for(const m of history){
+    messages.push({role:m.speaker==="agent"?"user":"assistant",content:m.text});
+  }
+  const out=await callAPI({
+    model:"gpt-4o-mini",
+    temperature:0.85,
+    max_tokens:80,
+    messages
+  });
+  if(!out)return null;
+  return out.split("\n").filter(l=>{
+    const lo=l.toLowerCase();
+    return !lo.startsWith("agent:")&&!lo.startsWith("apple:")&&!lo.includes("as an ai")&&!lo.includes("great job");
+  }).join(" ").trim()||null;
+}
+
 async function llmEvaluate(p,history){
   // Only last 20 turns + compress = fits in 10s timeout on free Vercel plan
   const lines=history.slice(-20);
