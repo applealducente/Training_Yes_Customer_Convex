@@ -351,6 +351,7 @@ closing:15 — confident ask, explores hesitation, secures next step
   15 = clear ask + handles hesitation with a reason + secures a specific next step (day/time) | 10 = ask + handles hesitation, no next step | 5 = asks once, weak or no follow-up | 0 = no ask
 
 Score what's observable. overall_score=sum of 8 scores.
+Trainees never see numbers: in ALL feedback text (notes, strengths, gaps, practice, summary) do NOT mention points, scores or numbers out of a total.
 
 Return ONLY this JSON:
 {"overall_score":0,"result":"FAIL","cte_present":false,"cte_details":{"incorrect_term":"","agent_statement":"","correct_standard":"","self_corrected":false},"scores":{"rapport":0,"discovery":0,"recommendation":0,"pitch_quality":0,"terms_accuracy":0,"features_benefits":0,"clarification":0,"closing":0},"score_notes":{"rapport":{"strengths":[],"opportunities":[]},"discovery":{"strengths":[],"opportunities":[]},"recommendation":{"strengths":[],"opportunities":[]},"pitch_quality":{"strengths":[],"opportunities":[]},"terms_accuracy":{"strengths":[],"opportunities":[]},"features_benefits":{"strengths":[],"opportunities":[]},"clarification":{"strengths":[],"opportunities":[]},"closing":{"strengths":[],"opportunities":[]}},"hidden_profile_reveal":{"lifestyle":"${p.lifestyle}","primary_priority":"","decision_style":"","cleaning_habit":"","service_experience":"","correct_hours":${p.recHours},"upcharge":${p.upcharge},"buying_likelihood":""},"strengths":[],"areas_for_improvement":[],"pitch_feedback":"","terms_feedback":"","primary_gap":"","recommended_practice":"","transcript_summary":""}`;
@@ -923,9 +924,8 @@ function renderDebrief(app){
     return;
   }
 
-  const scores=sc.scores||{};
+  // Trainees see Pass/Fail and tips only; number scores go to the Sheet and dashboard
   const notes=sc.score_notes||{};
-  const overall=sc.overall_score??0;
   const result=sc.result||"FAIL";
   const rc=result==="PASS"?"var(--good)":"var(--bad)";
   const hp=sc.hidden_profile_reveal||{};
@@ -957,7 +957,7 @@ function renderDebrief(app){
     ${sc.cte_details?.incorrect_term?`<p style="font-size:13px;margin-bottom:6px"><b>Incorrect term:</b> ${esc(sc.cte_details.incorrect_term)}</p>`:""}
     ${sc.cte_details?.agent_statement?`<p style="font-size:13px;margin-bottom:6px"><b>Agent said:</b> "${esc(sc.cte_details.agent_statement)}"</p>`:""}
     ${sc.cte_details?.correct_standard?`<p style="font-size:13px;margin-bottom:6px"><b>Correct standard:</b> ${esc(sc.cte_details.correct_standard)}</p>`:""}
-    <p style="font-size:13px;color:${sc.cte_details?.self_corrected?"var(--good)":"var(--bad)"}"><b>${sc.cte_details?.self_corrected?"&#10003; Self-corrected during call":"&#10007; NOT corrected — score capped at 79 (FAIL)"}</b></p>
+    <p style="font-size:13px;color:${sc.cte_details?.self_corrected?"var(--good)":"var(--bad)"}"><b>${sc.cte_details?.self_corrected?"&#10003; Self-corrected during call":"&#10007; NOT corrected — this makes the call a FAIL"}</b></p>
   </div>`:""
 
   app.innerHTML=`
@@ -966,9 +966,8 @@ function renderDebrief(app){
   <h1>${esc(ST.agent)}</h1>
 
   <div class="card" style="margin-top:16px;text-align:center;padding:30px">
-    <div class="score-big">${overall}/100</div>
-    <div style="margin-top:12px"><span class="pass-badge ${result==="PASS"?"pass":"fail"}">${esc(result)}</span></div>
-    <div style="margin-top:10px;font-size:12px;color:var(--muted)">90&#8211;100 Strong &#183; 80&#8211;89 Meets Standard &#183; 70&#8211;79 Development Required &#183; Below 70 Significant Development</div>
+    <span class="pass-badge ${result==="PASS"?"pass":"fail"}" style="font-size:22px;padding:10px 32px">${esc(result)}</span>
+    <div style="margin-top:12px;font-size:12px;color:var(--muted)">This practice call is a check-in only. Use the tips below to improve.</div>
   </div>
 
   ${cteSection}
@@ -988,14 +987,13 @@ function renderDebrief(app){
   </div>
 
   <div class="card">
-    <div class="section-title" style="margin-top:0">Scoring Breakdown &#8212; YCER-001</div>
+    <div class="section-title" style="margin-top:0">Skill Feedback &#8212; YCER-001</div>
     ${rubric.map(r=>`
     <div class="rubric-row">
       <div style="flex:1">
         <div class="rubric-label">${r.label}</div>
         <div class="rubric-notes">${catNotes(r.key)}</div>
       </div>
-      <div class="rubric-score">${scores[r.key]??0}/${r.max}</div>
     </div>`).join("")}
   </div>
 
@@ -1010,7 +1008,6 @@ function renderDebrief(app){
     <div class="section-title" style="margin-top:0;color:${rc}">&#127919; Final Assessment</div>
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px">
       <span class="pass-badge ${result==="PASS"?"pass":"fail"}" style="font-size:14px;padding:6px 18px">${esc(result)}</span>
-      <span style="font-family:var(--display);font-size:24px;font-weight:800;color:${rc}">${overall}/100</span>
     </div>
     ${sc.primary_gap?`<div class="section-title">Primary Gap</div><p style="font-size:13.5px;margin-bottom:10px">${esc(sc.primary_gap)}</p>`:""}
     ${sc.recommended_practice?`<div class="section-title">Recommended Practice</div><p style="font-size:13.5px">${esc(sc.recommended_practice)}</p>`:""}
