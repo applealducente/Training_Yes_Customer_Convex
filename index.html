@@ -332,17 +332,24 @@ CTE (critical terms error) = the AGENT SAYS something about price, commitment, E
 - Default is cte_present=false. Most calls have no CTE.
 - CTE and NOT self-corrected → cap score 79, result=FAIL.
 
-SCORE (total 100, PASS≥80):
+SCORE (total 100, PASS≥80). Use ONLY the listed point levels — pick the highest level fully met:
 rapport:5 — professional opener, conversational, listens
+  5 = introduces self + Homeaglow AND friendly back-and-forth | 3 = introduces self, little rapport | 0 = no intro
 discovery:10 — asks about home, needs, situation; uses answers later
+  10 = asks home size AND needs/situation AND uses answers later | 6 = home size + one need | 3 = home size only | 0 = none
 recommendation:10 — connects discovered need to ForeverClean before pitching
+  10 = ties recommendation to what customer said + correct hours | 5 = recommends without linking to needs | 0 = none
 pitch_quality:20 — explains membership, recurring nature, value; clear structure
-terms_accuracy:25 — $19 first month, $59/mo, 6-month commitment, correct hours and upcharge, ETF only if discussed (no deduction for not mentioning ETF)
+  20 = membership + recurring monthly cleaning + value, clear order | 12 = most of it, thin on value | 6 = only prices | 0 = no pitch
+terms_accuracy:25 — start at 25, minus 5 for EACH of these not clearly stated: $19 first month, $59/mo from month 2, 6-month commitment, correct hours, correct upcharge. ETF only if discussed (no deduction for not mentioning ETF)
 features_benefits:10 — personalizes value to THIS customer's specific life/needs
+  10 = 2+ benefits tied to this customer's life | 5 = generic benefits | 0 = none
 clarification:5 — answers customer questions accurately
+  5 = answers every question correctly (or customer asked none) | 3 = answers some or vaguely | 0 = ignores or answers wrong
 closing:15 — confident ask, explores hesitation, secures next step
+  15 = clear ask + handles hesitation with a reason + secures a specific next step (day/time) | 10 = ask + handles hesitation, no next step | 5 = asks once, weak or no follow-up | 0 = no ask
 
-PARTIAL CREDIT always. Score what's observable. overall_score=sum of 8 scores.
+Score what's observable. overall_score=sum of 8 scores.
 
 Return ONLY this JSON:
 {"overall_score":0,"result":"FAIL","cte_present":false,"cte_details":{"incorrect_term":"","agent_statement":"","correct_standard":"","self_corrected":false},"scores":{"rapport":0,"discovery":0,"recommendation":0,"pitch_quality":0,"terms_accuracy":0,"features_benefits":0,"clarification":0,"closing":0},"score_notes":{"rapport":{"strengths":[],"opportunities":[]},"discovery":{"strengths":[],"opportunities":[]},"recommendation":{"strengths":[],"opportunities":[]},"pitch_quality":{"strengths":[],"opportunities":[]},"terms_accuracy":{"strengths":[],"opportunities":[]},"features_benefits":{"strengths":[],"opportunities":[]},"clarification":{"strengths":[],"opportunities":[]},"closing":{"strengths":[],"opportunities":[]}},"hidden_profile_reveal":{"lifestyle":"${p.lifestyle}","primary_priority":"","decision_style":"","cleaning_habit":"","service_experience":"","correct_hours":${p.recHours},"upcharge":${p.upcharge},"buying_likelihood":""},"strengths":[],"areas_for_improvement":[],"pitch_feedback":"","terms_feedback":"","primary_gap":"","recommended_practice":"","transcript_summary":""}`;

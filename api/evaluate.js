@@ -25,7 +25,9 @@ module.exports = async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        temperature: 0.1,
+        // No randomness + fixed seed so the same call gets the same score
+        temperature: 0,
+        seed: 7,
         max_tokens: 1200,
         response_format: { type: "json_object" },
         messages: body.messages
