@@ -5,13 +5,15 @@
     { "src": "api/chat.js", "use": "@vercel/node" },
     { "src": "api/speak.js", "use": "@vercel/node" },
     { "src": "api/evaluate.js", "use": "@vercel/node" },
-    { "src": "api/save-result.js", "use": "@vercel/node" }
+    { "src": "api/save-result.js", "use": "@vercel/node" },
+    { "src": "api/admin-check.js", "use": "@vercel/node" }
   ],
   "routes": [
     { "src": "/api/chat", "dest": "/api/chat.js" },
     { "src": "/api/speak", "dest": "/api/speak.js" },
     { "src": "/api/evaluate", "dest": "/api/evaluate.js" },
     { "src": "/api/save-result", "dest": "/api/save-result.js" },
+    { "src": "/api/admin-check", "dest": "/api/admin-check.js" },
     { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
