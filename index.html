@@ -125,6 +125,15 @@ select option{background:#fff}
 .endcall-label{font-size:10px;color:var(--muted);text-align:center;margin-top:7px;letter-spacing:.08em;text-transform:uppercase;font-weight:600}
 
 /* live caption */
+.ck{width:100%;background:var(--surface);border:1.5px solid var(--line);border-radius:16px;padding:12px 14px;margin-top:14px;box-shadow:0 2px 8px rgba(167,139,202,.06)}
+.ck-title{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--purple);margin-bottom:8px}
+.ck-row{display:flex;align-items:center;gap:10px;padding:6px 0;color:var(--muted);transition:color .25s}
+.ck-box{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex:none;transition:all .25s}
+.ck-txt{display:flex;flex-direction:column;line-height:1.3;font-size:13px;text-align:left}
+.ck-txt i{font-style:normal;font-size:11px;color:var(--dim)}
+.ck-row.on{color:var(--ink)}
+.ck-row.on .ck-box{background:var(--mint);border-color:var(--mint)}
+.ck-warn{margin-top:8px;font-size:12px;color:var(--bad);font-weight:600}
 .caption-bar{background:var(--surface);border:1.5px solid var(--line);border-radius:14px;padding:10px 16px;font-size:13px;color:var(--muted);margin-top:14px;width:100%;min-height:40px;text-align:center;font-style:italic;box-shadow:0 2px 8px rgba(167,139,202,.06)}
 
 /* transcript */
@@ -337,10 +346,12 @@ features_benefits:10 — personalizes value to THIS customer's specific life/nee
 clarification:5 — answers customer questions accurately
 closing:15 — confident ask, explores hesitation, secures next step
 
+CHECKLIST (true/false, judge the AGENT): opening=greeted, gave their name and said Homeaglow/ForeverClean. discovery_questions=asked at least 2 real questions about the home, needs or habits. sales_pitch=explained the membership with price or value. in_order=opening, then discovery, then pitch.
+
 PARTIAL CREDIT always. Score what's observable. overall_score=sum of 8 scores.
 
 Return ONLY this JSON:
-{"overall_score":0,"result":"FAIL","cte_present":false,"cte_details":{"incorrect_term":"","agent_statement":"","correct_standard":"","self_corrected":false},"scores":{"rapport":0,"discovery":0,"recommendation":0,"pitch_quality":0,"terms_accuracy":0,"features_benefits":0,"clarification":0,"closing":0},"score_notes":{"rapport":{"strengths":[],"opportunities":[]},"discovery":{"strengths":[],"opportunities":[]},"recommendation":{"strengths":[],"opportunities":[]},"pitch_quality":{"strengths":[],"opportunities":[]},"terms_accuracy":{"strengths":[],"opportunities":[]},"features_benefits":{"strengths":[],"opportunities":[]},"clarification":{"strengths":[],"opportunities":[]},"closing":{"strengths":[],"opportunities":[]}},"hidden_profile_reveal":{"lifestyle":"${p.lifestyle}","primary_priority":"","decision_style":"","cleaning_habit":"","service_experience":"","correct_hours":${p.recHours},"upcharge":${p.upcharge},"buying_likelihood":""},"strengths":[],"areas_for_improvement":[],"pitch_feedback":"","terms_feedback":"","primary_gap":"","recommended_practice":"","transcript_summary":""}`;
+{"overall_score":0,"result":"FAIL","cte_present":false,"cte_details":{"incorrect_term":"","agent_statement":"","correct_standard":"","self_corrected":false},"scores":{"rapport":0,"discovery":0,"recommendation":0,"pitch_quality":0,"terms_accuracy":0,"features_benefits":0,"clarification":0,"closing":0},"score_notes":{"rapport":{"strengths":[],"opportunities":[]},"discovery":{"strengths":[],"opportunities":[]},"recommendation":{"strengths":[],"opportunities":[]},"pitch_quality":{"strengths":[],"opportunities":[]},"terms_accuracy":{"strengths":[],"opportunities":[]},"features_benefits":{"strengths":[],"opportunities":[]},"clarification":{"strengths":[],"opportunities":[]},"closing":{"strengths":[],"opportunities":[]}},"hidden_profile_reveal":{"lifestyle":"${p.lifestyle}","primary_priority":"","decision_style":"","cleaning_habit":"","service_experience":"","correct_hours":${p.recHours},"upcharge":${p.upcharge},"buying_likelihood":""},"strengths":[],"areas_for_improvement":[],"pitch_feedback":"","terms_feedback":"","primary_gap":"","recommended_practice":"","transcript_summary":"","checklist":{"opening":false,"discovery_questions":false,"sales_pitch":false,"in_order":true}}`;
 }
 
 
@@ -601,6 +612,45 @@ function startClock(){if(_clock)clearInterval(_clock);_clock=setInterval(()=>{co
 function stopClock(){if(_clock){clearInterval(_clock);_clock=null;}}
 
 /* ============================================================
+   CALL CHECKLIST: Opening, Discovery Questions, Sales Pitch
+   ============================================================ */
+const CK_STEPS=[
+  {k:"opening",l:"Opening",d:"Greeting, your name, Homeaglow / ForeverClean"},
+  {k:"discovery",l:"Discovery Questions",d:"Ask about the home, needs and habits"},
+  {k:"pitch",l:"Sales Pitch",d:"Membership, $19 first month, $59/mo, value"}
+];
+function computeChecklist(history){
+  const ag=history.map((m,i)=>({m,i})).filter(x=>x.m.speaker==="agent");
+  const open=/\b(hi|hello|hey|good (morning|afternoon|evening)|my name is|this is|calling (from|with|you)|homeaglow|foreverclean|forever clean|how are you)\b/i;
+  const disc=/\?|\b(tell me|how often|how many|what kind|do you have|are you|have you|currently|looking for|bedroom|bathroom|pets?|kids?|children|schedule|clean(ing)? (now|yourself|by)|who cleans|budget|priority|important)\b/i;
+  const pitch=/\b(membership|\$ ?19|\$ ?59|19 dollars|59 dollars|per month|a month|monthly|first month|free (3|three)[- ]hour|voucher|6[- ]month|six[- ]month|commitment|recurring|foreverclean (plan|service|membership))\b/i;
+  const o=ag.slice(0,2).some(x=>open.test(x.m.text));
+  const dTurns=ag.filter(x=>x.m.text.indexOf("?")>-1&&disc.test(x.m.text));
+  const d=dTurns.length>=2;
+  const pTurn=ag.find(x=>pitch.test(x.m.text));
+  const pt=!!pTurn;
+  const inOrder=!(pt&&d)||pTurn.i>dTurns[0].i;
+  return {opening:o,discovery:d,pitch:pt,in_order:inOrder,pitched_early:pt&&!d};
+}
+function ckFinal(){
+  const a=ST.score&&ST.score.checklist;
+  const det=computeChecklist(ST.history);
+  if(a&&typeof a==="object"){
+    return {opening:a.opening===true,discovery:a.discovery_questions===true,pitch:a.sales_pitch===true,
+      in_order:a.in_order!==false,pitched_early:a.sales_pitch===true&&a.discovery_questions!==true};
+  }
+  return det;
+}
+function ckHTML(c,title){
+  const rows=CK_STEPS.map(x=>{const on=c[x.k];
+    return `<div class="ck-row ${on?"on":""}"><span class="ck-box">${on?"&#10003;":""}</span><span class="ck-txt"><b>${x.l}</b><i>${x.d}</i></span></div>`;}).join("");
+  const warn=(c.pitched_early||(!c.in_order&&c.pitch&&c.discovery))
+    ?`<div class="ck-warn">&#9888; Pitch came before discovery. Ask your questions first.</div>`:"";
+  return `<div class="ck">${title?`<div class="ck-title">${title}</div>`:""}${rows}${warn}</div>`;
+}
+function ckYN(v){return v?"Yes":"No";}
+
+/* ============================================================
    CALL FLOW
    ============================================================ */
 function pushCustomer(text){
@@ -698,6 +748,9 @@ function _saveToDash(sc,_unused){
     clarification:scores.clarification!=null?String(scores.clarification):"—",
     closing:scores.closing!=null?String(scores.closing):"—",
     primary_gap:sc&&sc.primary_gap?sc.primary_gap:"",
+    ck_opening:ckYN(ckFinal().opening),
+    ck_discovery:ckYN(ckFinal().discovery),
+    ck_pitch:ckYN(ckFinal().pitch),
     transcript_summary:sc&&sc.transcript_summary
       ?sc.transcript_summary
       :ST.history.slice(-20).map(m=>(m.speaker==="customer"?p.name:"Agent")+": "+m.text).join(" | "),
@@ -797,6 +850,7 @@ function renderCall(app){
     </button>
     <div class="endcall-label">Tap to end &amp; score</div>
     <div id="apiTestResult" style="font-size:11px;color:var(--muted);text-align:center;margin-top:4px;cursor:pointer" onclick="testAPI()">Tap to test API connection</div>
+    ${ckHTML(computeChecklist(ST.history),"Call checklist")}
     <div class="caption-bar">
       <span id="caption" style="font-size:13px">${ST.listening?"&#127908; "+("Listening…"):ST.busy?"Processing…":"Speak after the customer finishes"}</span>
     </div>
@@ -855,6 +909,7 @@ function renderDebrief(app){
       <p style="font-size:15px;font-weight:700;color:var(--purple);margin-bottom:8px">Practice call completed!</p>
       <p style="color:var(--muted);font-size:13px;line-height:1.7">Your session has been saved to the dashboard.<br>The AI evaluator wasn&#8217;t able to score this attempt &#8212; your manager can review the transcript.</p>
     </div>
+    <div class="card">${ckHTML(ckFinal(),"Call Checklist")}</div>
     <div class="card" style="background:rgba(133,201,184,.08);border-color:rgba(133,201,184,.3)">
       <div class="section-title" style="margin-top:0;color:var(--mint)">&#128172; Call Transcript</div>
       <div style="font-size:12.5px;color:var(--muted);line-height:1.8;max-height:200px;overflow-y:auto">
@@ -919,6 +974,8 @@ function renderDebrief(app){
   </div>
 
   ${cteSection}
+
+  <div class="card">${ckHTML(ckFinal(),"Call Checklist")}</div>
 
   <div class="card">
     <div class="section-title" style="margin-top:0">Hidden Customer Profile &#128065;</div>
@@ -1115,6 +1172,7 @@ function renderDashboard(app){
               <div style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-top:2px">${s.l}/${s.m}</div>
             </div>`).join("")}
           </div>
+          ${r.ck_opening?`<div style="font-size:12.5px;margin-bottom:10px;color:var(--ink)"><b>Checklist:</b> Opening ${r.ck_opening==="Yes"?"&#10003;":"&#10007;"} &nbsp; Discovery ${r.ck_discovery==="Yes"?"&#10003;":"&#10007;"} &nbsp; Sales Pitch ${r.ck_pitch==="Yes"?"&#10003;":"&#10007;"}</div>`:""}
           ${r.primary_gap?`<div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--purple);font-weight:700;margin-bottom:4px">Primary Gap</div><p style="font-size:13px;color:var(--ink);margin-bottom:10px">${esc(r.primary_gap)}</p>`:""}
           ${r.transcript_summary?`<div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--purple);font-weight:700;margin-bottom:4px">Summary</div><p style="font-size:12.5px;color:var(--muted);line-height:1.6">${esc(r.transcript_summary)}</p>`:""}
           <div style="font-size:11px;color:var(--dim);margin-top:8px">Team: ${esc(r.team||"—")} &bull; Date Hired: ${esc(r.date_hired||"—")} &bull; Entry: ${esc(r.call_entry||"—")}</div>
@@ -1144,11 +1202,11 @@ function renderDashboard(app){
   });
 
   document.getElementById("dlCsv").onclick=()=>{
-    const cols=["Timestamp","Result","Score","Agent Name","Email","TL Name","Team","Date Hired","Scenario","CTE","Rapport","Discovery","Recommendation","Pitch Quality","Terms Accuracy","FAB","Clarification","Closing","Primary Gap","Summary"];
+    const cols=["Timestamp","Result","Score","Agent Name","Email","TL Name","Team","Date Hired","Scenario","CTE","Rapport","Discovery","Recommendation","Pitch Quality","Terms Accuracy","FAB","Clarification","Closing","Opening Done","Discovery Done","Pitch Done","Primary Gap","Summary"];
     const csvRows=[cols.join(","),...filtered.map(r=>[
       r.timestamp,r.result,r.overall_score,r.agent_name,r.agent_email,r.tl_name,r.team,r.date_hired,
       r.scenario,r.cte,r.rapport,r.discovery,r.recommendation,r.pitch_quality,
-      r.terms_accuracy,r.features_benefits,r.clarification,r.closing,r.primary_gap,r.transcript_summary
+      r.terms_accuracy,r.features_benefits,r.clarification,r.closing,r.ck_opening,r.ck_discovery,r.ck_pitch,r.primary_gap,r.transcript_summary
     ].map(v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"').join(","))];
     const blob=new Blob([csvRows.join("\n")],{type:"text/csv"});
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);

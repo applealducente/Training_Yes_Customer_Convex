@@ -25,6 +25,9 @@ const COLUMNS = [
   ["call_entry", "Call Opening"],
   ["primary_gap", "Main Thing to Work On"],
   ["transcript_summary", "Call Transcript"],
+  ["ck_opening", "Opening Done"],
+  ["ck_discovery", "Discovery Questions Done"],
+  ["ck_pitch", "Sales Pitch Done"],
 ];
 
 function doPost(e) {
